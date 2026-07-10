@@ -185,8 +185,19 @@ function initTokenClient(retriesLeft){
   }
 }
 
-clientIdInput.addEventListener('blur', () => initTokenClient());
-clientIdInput.addEventListener('change', () => initTokenClient());
+clientIdInput.addEventListener('blur', () => { saveClientId(); initTokenClient(); });
+clientIdInput.addEventListener('change', () => { saveClientId(); initTokenClient(); });
+
+function saveClientId(){
+  try { localStorage.setItem('rechercheMail_clientId', clientIdInput.value.trim()); } catch(e){}
+}
+function loadClientId(){
+  try {
+    const saved = localStorage.getItem('rechercheMail_clientId');
+    if (saved) { clientIdInput.value = saved; initTokenClient(); }
+  } catch(e){}
+}
+loadClientId();
 clientIdInput.addEventListener('input', () => {
   clientIdBadge.textContent = 'non configuré';
   clientIdBadge.classList.remove('ok');
@@ -218,14 +229,29 @@ async function handleTokenResponse(resp){
     });
     if (!profileRes.ok) throw new Error('profil illisible');
     const profile = await profileRes.json();
+    const expiresAt = Date.now() + (resp.expires_in ? resp.expires_in * 1000 : 3600 * 1000);
     const existing = connectedAccounts.find(a => a.email === profile.emailAddress);
-    if (existing) { existing.token = resp.access_token; }
-    else { connectedAccounts.push({ email: profile.emailAddress, token: resp.access_token }); }
+    if (existing) { existing.token = resp.access_token; existing.expiresAt = expiresAt; }
+    else { connectedAccounts.push({ email: profile.emailAddress, token: resp.access_token, expiresAt }); }
+    saveAccounts();
     renderAccounts();
     searchBtn.disabled = connectedAccounts.length === 0;
   } catch(e){
     errorMsg.textContent = "Erreur lors de la récupération du compte : " + e.message;
   }
+}
+
+function saveAccounts(){
+  try { localStorage.setItem('rechercheMail_accounts', JSON.stringify(connectedAccounts)); } catch(e){}
+}
+
+function loadAccounts(){
+  try {
+    const saved = JSON.parse(localStorage.getItem('rechercheMail_accounts') || '[]');
+    const now = Date.now();
+    connectedAccounts = saved.filter(a => a.expiresAt && a.expiresAt > now);
+    if (connectedAccounts.length !== saved.length) saveAccounts(); // purge les jetons expirés
+  } catch(e){ connectedAccounts = []; }
 }
 
 function renderAccounts(){
@@ -358,7 +384,9 @@ searchBtn.addEventListener('click', async () => {
   }
 });
 
+loadAccounts();
 renderAccounts();
+searchBtn.disabled = connectedAccounts.length === 0;
 renderQuery();
 </script>
 </body>
