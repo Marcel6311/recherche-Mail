@@ -1,0 +1,19 @@
+{
+  "name": "recherche-mail-backend",
+  "version": "1.0.0",
+  "description": "Backend OAuth pour Recherche-Mail : gere le refresh token Google et la recherche multi-comptes Gmail",
+  "main": "server.js",
+  "type": "commonjs",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.19.2",
+    "googleapis": "^140.0.1",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
