@@ -1,0 +1,365 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Recherche unifiée — Gmail multi-comptes</title>
+<script src="https://accounts.google.com/gsi/client" async defer></script>
+<style>
+  :root{
+    --bg: #0d0f0e;
+    --panel: #161917;
+    --panel-2: #1d2119;
+    --line: #2a2f27;
+    --white: #FFFFFF;
+    --muted: #9aa294;
+    --accent: #d4a537;
+    --accent-2: #6b8f4e;
+    --danger: #b5543a;
+    --mono: 'SF Mono', 'Menlo', 'Consolas', monospace;
+    --sans: -apple-system, 'Inter', 'Helvetica Neue', sans-serif;
+  }
+  * { box-sizing: border-box; }
+  body { background: var(--bg); color: var(--white); font-family: var(--sans); margin: 0; padding: 24px 16px 60px; min-height: 100vh; }
+  .wrap { max-width: 660px; margin: 0 auto; }
+  header { margin-bottom: 24px; }
+  .eyebrow { font-family: var(--mono); font-size: 11px; letter-spacing: .14em; text-transform: uppercase; color: var(--accent); margin-bottom: 8px; }
+  h1 { font-size: 22px; margin: 0 0 4px; font-weight: 600; letter-spacing: -.01em; }
+  .sub { color: var(--muted); font-size: 13px; line-height: 1.5; }
+  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 18px; margin-bottom: 16px; }
+  .panel-title { font-family: var(--mono); font-size: 11px; text-transform: uppercase; letter-spacing: .1em; color: var(--muted); margin-bottom: 14px; display:flex; justify-content:space-between; align-items:center; }
+  .field { margin-bottom: 12px; }
+  .field:last-child { margin-bottom: 0; }
+  label { display: block; font-size: 12.5px; color: var(--muted); margin-bottom: 5px; }
+  input[type=text], input[type=date] { width: 100%; background: var(--panel-2); border: 1px solid var(--line); color: var(--white); padding: 10px 11px; border-radius: 8px; font-size: 14px; font-family: var(--sans); }
+  input[type=text]:focus, input[type=date]:focus { outline: none; border-color: var(--accent); }
+  .row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .checks { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 4px; }
+  .chip { font-size: 12.5px; padding: 7px 12px; border-radius: 999px; border: 1px solid var(--line); background: var(--panel-2); color: var(--muted); cursor: pointer; user-select: none; transition: all .15s ease; }
+  .chip.active { border-color: var(--accent); color: var(--bg); background: var(--accent); font-weight: 600; }
+  .query-box { font-family: var(--mono); font-size: 13px; color: var(--accent); background: var(--panel-2); border: 1px dashed var(--line); border-radius: 8px; padding: 12px; word-break: break-word; min-height: 20px; }
+  .query-box.empty { color: var(--muted); font-style: italic; }
+
+  .setup-badge { font-size: 11px; padding: 3px 8px; border-radius: 6px; background: var(--panel-2); color: var(--muted); border: 1px solid var(--line); }
+  .setup-badge.ok { color: var(--accent-2); border-color: var(--accent-2); }
+
+  .accounts { display: flex; flex-direction: column; gap: 8px; margin-bottom: 12px; }
+  .acct { display: flex; align-items: center; justify-content: space-between; gap: 10px; background: var(--panel-2); border: 1px solid var(--line); border-radius: 8px; padding: 9px 11px; }
+  .acct.connected { border-color: var(--accent-2); }
+  .acct-email { font-family: var(--mono); font-size: 12.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .acct-status { font-size: 11px; color: var(--muted); }
+  .acct-status.on { color: var(--accent-2); }
+  .btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; background: var(--accent-2); color: var(--white); border: none; border-radius: 9px; padding: 12px 14px; font-size: 14px; font-weight: 600; cursor: pointer; width: 100%; }
+  .btn:disabled { background: var(--panel-2); color: var(--muted); cursor: not-allowed; }
+  .btn.secondary { background: var(--panel-2); border: 1px solid var(--line); color: var(--white); font-weight: 500; }
+  .btn.small { padding: 7px 10px; font-size: 12px; width: auto; }
+  .note { font-size: 11.5px; color: var(--muted); margin-top: 8px; line-height: 1.5; }
+
+  .results { display: flex; flex-direction: column; gap: 8px; }
+  .result { background: var(--panel-2); border: 1px solid var(--line); border-radius: 10px; padding: 12px; text-decoration: none; color: var(--white); display: block; }
+  .result:hover { border-color: var(--accent); }
+  .result-top { display: flex; justify-content: space-between; gap: 8px; margin-bottom: 4px; }
+  .result-from { font-size: 13px; font-weight: 600; }
+  .result-date { font-size: 11px; color: var(--muted); font-family: var(--mono); white-space: nowrap; }
+  .result-subject { font-size: 13.5px; margin-bottom: 3px; }
+  .result-snippet { font-size: 12.5px; color: var(--muted); line-height: 1.4; }
+  .result-account { display:inline-block; font-family: var(--mono); font-size: 10px; color: var(--accent); background: rgba(212,165,55,0.1); padding: 2px 6px; border-radius: 5px; margin-top: 6px; }
+  .loading { text-align: center; color: var(--muted); font-size: 13px; padding: 20px 0; }
+  .error-msg { color: var(--danger); font-size: 12.5px; margin-top: 8px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <div class="eyebrow">Recherche unifiée — historique complet</div>
+    <h1>Console de recherche mail</h1>
+    <div class="sub">Interroge en direct les serveurs Gmail de tes comptes connectés, années d'historique comprises, et fusionne les résultats en une seule liste triée.</div>
+  </header>
+
+  <div class="panel">
+    <div class="panel-title">
+      <span>1 — Identifiant OAuth</span>
+      <span class="setup-badge" id="clientIdBadge">non configuré</span>
+    </div>
+    <div class="field">
+      <label>Client ID Google Cloud (se termine par .apps.googleusercontent.com)</label>
+      <input type="text" id="clientId" placeholder="colle ton Client ID ici">
+    </div>
+    <div class="note">Cette valeur n'est jamais envoyée ailleurs qu'à Google — elle reste dans cette page, pour cette session.</div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-title"><span>2 — Comptes à connecter</span></div>
+    <div class="accounts" id="accountsList"></div>
+    <button class="btn secondary" id="connectBtn" disabled>Connecter un compte Gmail</button>
+    <div class="note" id="connectNote">Renseigne d'abord le Client ID ci-dessus.</div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-title"><span>3 — Critères de recherche</span></div>
+    <div class="field"><label>Expéditeur (from:)</label><input type="text" id="from" placeholder="ex: google.com"></div>
+    <div class="field"><label>Destinataire (to:)</label><input type="text" id="to" placeholder="ex: marcel.mellier@gmail.com"></div>
+    <div class="field"><label>Objet (subject:)</label><input type="text" id="subject" placeholder="ex: facture, API key"></div>
+    <div class="field"><label>Contient les mots</label><input type="text" id="contains" placeholder="mots libres"></div>
+    <div class="field"><label>Nom de fichier joint</label><input type="text" id="filename" placeholder="ex: pdf"></div>
+    <div class="field row2">
+      <div><label>Après le</label><input type="date" id="after"></div>
+      <div><label>Avant le</label><input type="date" id="before"></div>
+    </div>
+    <div class="field">
+      <label>Options</label>
+      <div class="checks">
+        <div class="chip" data-op="has:attachment">Avec pièce jointe</div>
+        <div class="chip" data-op="in:anywhere">Chercher partout</div>
+        <div class="chip" data-op="is:unread">Non lus</div>
+        <div class="chip" data-op="is:starred">Suivis</div>
+      </div>
+    </div>
+    <div class="field">
+      <label>Requête générée</label>
+      <div class="query-box empty" id="queryPreview">La requête apparaîtra ici</div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-title"><span>4 — Lancer</span></div>
+    <button class="btn" id="searchBtn" disabled>Rechercher dans tous les comptes connectés</button>
+    <div class="error-msg" id="errorMsg"></div>
+  </div>
+
+  <div class="panel" id="resultsPanel" style="display:none;">
+    <div class="panel-title"><span>Résultats</span><span id="resultCount" class="setup-badge"></span></div>
+    <div class="results" id="resultsList"></div>
+  </div>
+
+</div>
+
+<script>
+let tokenClient = null;
+let connectedAccounts = []; // {email, token}
+const activeOps = new Set();
+
+const clientIdInput = document.getElementById('clientId');
+const clientIdBadge = document.getElementById('clientIdBadge');
+const connectBtn = document.getElementById('connectBtn');
+const connectNote = document.getElementById('connectNote');
+const searchBtn = document.getElementById('searchBtn');
+const errorMsg = document.getElementById('errorMsg');
+
+function initTokenClient(retriesLeft){
+  if (retriesLeft === undefined) retriesLeft = 10;
+  const id = clientIdInput.value.trim();
+  if (!id) return;
+
+  if (!window.google || !window.google.accounts || !window.google.accounts.oauth2){
+    if (retriesLeft > 0){
+      clientIdBadge.textContent = 'chargement…';
+      connectNote.textContent = "Chargement du script Google en cours, patiente quelques secondes…";
+      setTimeout(() => initTokenClient(retriesLeft - 1), 400);
+      return;
+    } else {
+      clientIdBadge.textContent = 'échec';
+      errorMsg.textContent = "Le script Google (accounts.google.com/gsi/client) n'a pas pu se charger. Vérifie ta connexion internet, ou qu'aucun bloqueur de pub/traqueurs n'empêche accounts.google.com de se charger. Si tu ouvres ce fichier en double-clic (file://), essaie plutôt de le déposer sur ton GitHub Pages et de l'ouvrir via https://.";
+      return;
+    }
+  }
+
+  try {
+    tokenClient = google.accounts.oauth2.initTokenClient({
+      client_id: id,
+      scope: 'https://www.googleapis.com/auth/gmail.readonly',
+      callback: handleTokenResponse,
+      error_callback: (err) => {
+        errorMsg.textContent = "Erreur Google : " + (err && err.type ? err.type : JSON.stringify(err));
+      }
+    });
+    clientIdBadge.textContent = 'prêt';
+    clientIdBadge.classList.add('ok');
+    connectBtn.disabled = false;
+    connectNote.textContent = 'Clique pour connecter chacun de tes comptes (choisis un compte différent à chaque clic).';
+    errorMsg.textContent = '';
+  } catch(e){
+    clientIdBadge.textContent = 'erreur';
+    errorMsg.textContent = "Client ID invalide ou rejeté par Google : " + e.message;
+  }
+}
+
+clientIdInput.addEventListener('blur', () => initTokenClient());
+clientIdInput.addEventListener('change', () => initTokenClient());
+clientIdInput.addEventListener('input', () => {
+  clientIdBadge.textContent = 'non configuré';
+  clientIdBadge.classList.remove('ok');
+  connectBtn.disabled = true;
+  tokenClient = null;
+});
+
+connectBtn.addEventListener('click', () => {
+  if (!tokenClient) {
+    initTokenClient();
+    setTimeout(() => {
+      if (tokenClient) tokenClient.requestAccessToken({ prompt: 'select_account consent' });
+      else if (!errorMsg.textContent) errorMsg.textContent = "Le Client ID n'est pas encore reconnu — vérifie qu'il est bien collé en entier, sans espace.";
+    }, 600);
+    return;
+  }
+  errorMsg.textContent = '';
+  tokenClient.requestAccessToken({ prompt: 'select_account consent' });
+});
+
+async function handleTokenResponse(resp){
+  if (resp.error){
+    errorMsg.textContent = "Connexion refusée ou annulée (" + resp.error + ").";
+    return;
+  }
+  try {
+    const profileRes = await fetch('https://www.googleapis.com/gmail/v1/users/me/profile', {
+      headers: { Authorization: 'Bearer ' + resp.access_token }
+    });
+    if (!profileRes.ok) throw new Error('profil illisible');
+    const profile = await profileRes.json();
+    const existing = connectedAccounts.find(a => a.email === profile.emailAddress);
+    if (existing) { existing.token = resp.access_token; }
+    else { connectedAccounts.push({ email: profile.emailAddress, token: resp.access_token }); }
+    renderAccounts();
+    searchBtn.disabled = connectedAccounts.length === 0;
+  } catch(e){
+    errorMsg.textContent = "Erreur lors de la récupération du compte : " + e.message;
+  }
+}
+
+function renderAccounts(){
+  const list = document.getElementById('accountsList');
+  if (connectedAccounts.length === 0){
+    list.innerHTML = "<div class=\"note\">Aucun compte connecté pour l'instant.</div>";
+    return;
+  }
+  list.innerHTML = '';
+  connectedAccounts.forEach(acc => {
+    const row = document.createElement('div');
+    row.className = 'acct connected';
+    row.innerHTML = `<span class="acct-email">${acc.email}</span><span class="acct-status on">● connecté</span>`;
+    list.appendChild(row);
+  });
+}
+
+function fieldVal(id){ return document.getElementById(id).value.trim(); }
+
+function buildQuery(){
+  const parts = [];
+  const from = fieldVal('from'), to = fieldVal('to'), subject = fieldVal('subject');
+  const contains = fieldVal('contains'), filename = fieldVal('filename');
+  const after = fieldVal('after'), before = fieldVal('before');
+  if (from) parts.push(`from:${from}`);
+  if (to) parts.push(`to:${to}`);
+  if (subject) parts.push(subject.includes(' ') ? `subject:"${subject}"` : `subject:${subject}`);
+  if (filename) parts.push(`filename:${filename}`);
+  if (after) parts.push(`after:${after.replace(/-/g,'/')}`);
+  if (before) parts.push(`before:${before.replace(/-/g,'/')}`);
+  activeOps.forEach(op => parts.push(op));
+  if (contains) parts.push(contains);
+  return parts.join(' ');
+}
+
+function renderQuery(){
+  const q = buildQuery();
+  const box = document.getElementById('queryPreview');
+  if (!q){ box.textContent = 'La requête apparaîtra ici'; box.classList.add('empty'); }
+  else { box.textContent = q; box.classList.remove('empty'); }
+}
+
+document.querySelectorAll('#from,#to,#subject,#contains,#filename,#after,#before').forEach(el => {
+  el.addEventListener('input', renderQuery);
+});
+
+document.querySelectorAll('.chip').forEach(chip => {
+  chip.addEventListener('click', () => {
+    const op = chip.dataset.op;
+    if (activeOps.has(op)){ activeOps.delete(op); chip.classList.remove('active'); }
+    else { activeOps.add(op); chip.classList.add('active'); }
+    renderQuery();
+  });
+});
+
+async function fetchMessagesForAccount(acc, query){
+  const listRes = await fetch(
+    `https://www.googleapis.com/gmail/v1/users/me/messages?q=${encodeURIComponent(query)}&maxResults=20`,
+    { headers: { Authorization: 'Bearer ' + acc.token } }
+  );
+  if (!listRes.ok) {
+    if (listRes.status === 401) throw new Error(`${acc.email} : session expirée, reconnecte ce compte.`);
+    throw new Error(`${acc.email} : erreur de recherche (${listRes.status})`);
+  }
+  const listData = await listRes.json();
+  const ids = (listData.messages || []).map(m => m.id);
+
+  const messages = await Promise.all(ids.map(async id => {
+    const res = await fetch(
+      `https://www.googleapis.com/gmail/v1/users/me/messages/${id}?format=metadata&metadataHeaders=Subject&metadataHeaders=From&metadataHeaders=Date`,
+      { headers: { Authorization: 'Bearer ' + acc.token } }
+    );
+    if (!res.ok) return null;
+    const data = await res.json();
+    const headers = {};
+    (data.payload?.headers || []).forEach(h => headers[h.name] = h.value);
+    return {
+      account: acc.email,
+      id: data.id,
+      snippet: data.snippet || '',
+      subject: headers['Subject'] || '(sans objet)',
+      from: headers['From'] || '',
+      date: headers['Date'] || '',
+      internalDate: parseInt(data.internalDate || '0', 10)
+    };
+  }));
+  return messages.filter(Boolean);
+}
+
+searchBtn.addEventListener('click', async () => {
+  const query = buildQuery();
+  errorMsg.textContent = '';
+  const resultsPanel = document.getElementById('resultsPanel');
+  const resultsList = document.getElementById('resultsList');
+  const resultCount = document.getElementById('resultCount');
+  resultsPanel.style.display = 'block';
+  resultsList.innerHTML = '<div class="loading">Recherche en cours dans ' + connectedAccounts.length + ' compte(s)…</div>';
+
+  try {
+    const allResults = await Promise.all(connectedAccounts.map(acc => fetchMessagesForAccount(acc, query).catch(e => { errorMsg.textContent += e.message + ' '; return []; })));
+    const merged = allResults.flat().sort((a,b) => b.internalDate - a.internalDate);
+
+    resultCount.textContent = merged.length + ' résultat(s)';
+    if (merged.length === 0){
+      resultsList.innerHTML = '<div class="note">Aucun résultat pour cette requête.</div>';
+      return;
+    }
+    resultsList.innerHTML = '';
+    merged.forEach(m => {
+      const a = document.createElement('a');
+      a.className = 'result';
+      a.href = `https://mail.google.com/mail/u/${encodeURIComponent(m.account)}/#search/${encodeURIComponent(query)}/${m.id}`;
+      a.target = '_blank';
+      a.rel = 'noopener';
+      const dateShort = m.date ? new Date(m.date).toLocaleDateString('fr-CH', {day:'2-digit', month:'2-digit', year:'numeric'}) : '';
+      a.innerHTML = `
+        <div class="result-top">
+          <div class="result-from">${(m.from || '').replace(/</,'&lt;').split('<')[0].trim()}</div>
+          <div class="result-date">${dateShort}</div>
+        </div>
+        <div class="result-subject">${m.subject}</div>
+        <div class="result-snippet">${m.snippet}</div>
+        <div class="result-account">${m.account}</div>
+      `;
+      resultsList.appendChild(a);
+    });
+  } catch(e){
+    resultsList.innerHTML = '';
+    errorMsg.textContent = "Erreur : " + e.message;
+  }
+});
+
+renderAccounts();
+renderQuery();
+</script>
+</body>
+</html>
