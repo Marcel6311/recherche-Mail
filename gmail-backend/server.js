@@ -127,9 +127,6 @@ async function getAuthedClientFor(email) {
   const client = newOAuthClient();
   client.setCredentials({ refresh_token: account.refresh_token });
 
-  // googleapis rafraichit automatiquement l'access token quand il expire.
-  // Google ne renvoie generalement pas de nouveau refresh_token a cette
-  // occasion, mais on le persiste par securite si c'est le cas.
   client.on('tokens', (tokens) => {
     if (tokens.refresh_token) {
       loadAccounts().then((current) => {
@@ -146,26 +143,29 @@ async function getAuthedClientFor(email) {
 
 // ---------- App ----------
 
+// FRONTEND_URL peut contenir un chemin (ex: https://x.github.io/Recherche-Mail).
+// Le header Origin envoye par le navigateur, lui, ne contient jamais de chemin
+// (juste https://x.github.io) — on doit donc comparer uniquement cette partie.
+const FRONTEND_ORIGIN = FRONTEND_URL ? new URL(FRONTEND_URL).origin : '*';
+
 const app = express();
-app.use(cors({ origin: FRONTEND_URL || '*' }));
+app.use(cors({ origin: FRONTEND_ORIGIN }));
 app.use(express.json());
 
 app.get('/', (req, res) => {
   res.send('Recherche-Mail backend en ligne.' + (USE_REDIS ? '' : ' (stockage local, non persistant)'));
 });
 
-// Etape 1 : lance le flux OAuth pour un compte
 app.get('/auth/start', (req, res) => {
   const client = newOAuthClient();
   const url = client.generateAuthUrl({
     access_type: 'offline',
-    prompt: 'consent', // force l'emission d'un refresh_token a chaque fois
+    prompt: 'consent',
     scope: SCOPES,
   });
   res.redirect(url);
 });
 
-// Etape 2 : callback Google, echange le code contre les tokens
 app.get('/auth/callback', async (req, res) => {
   const { code, error } = req.query;
   if (error) {
@@ -176,13 +176,11 @@ app.get('/auth/callback', async (req, res) => {
     const { tokens } = await client.getToken(code);
     client.setCredentials(tokens);
 
-    // Recupere l'email associe a ce compte
     const oauth2 = google.oauth2({ auth: client, version: 'v2' });
     const { data } = await oauth2.userinfo.get();
     const email = data.email;
 
     if (!tokens.refresh_token) {
-      // Arrive si le compte avait deja donne son consentement sans "prompt=consent"
       return res.redirect(`${FRONTEND_URL}?auth_error=no_refresh_token`);
     }
 
@@ -201,7 +199,6 @@ app.get('/auth/callback', async (req, res) => {
   }
 });
 
-// Liste des comptes connectes (sans exposer les tokens)
 app.get('/accounts', async (req, res) => {
   try {
     const accounts = await loadAccounts();
@@ -216,7 +213,6 @@ app.get('/accounts', async (req, res) => {
   }
 });
 
-// Deconnexion d'un compte
 app.delete('/accounts/:email', async (req, res) => {
   try {
     const accounts = await loadAccounts();
@@ -228,7 +224,6 @@ app.delete('/accounts/:email', async (req, res) => {
   }
 });
 
-// Construit la requete Gmail (q=) a partir des parametres du constructeur
 function buildQuery(params) {
   const parts = [];
   if (params.q) parts.push(params.q);
@@ -301,7 +296,6 @@ async function searchAccount(email, query, maxResults) {
   }
 }
 
-// Recherche fusionnee sur tous les comptes connectes
 app.get('/search', async (req, res) => {
   try {
     const accounts = await loadAccounts();
