@@ -108,7 +108,7 @@
 <div class="wrap">
 
   <header>
-    <div class="eyebrow">Recherche unifiée — historique complet <span style="float:right; opacity:0.7;">v7</span></div>
+    <div class="eyebrow">Recherche unifiée — historique complet <span style="float:right; opacity:0.7;">v8</span></div>
     <h1>Console de recherche mail</h1>
     <div class="sub">Interroge en direct les serveurs Gmail de tes comptes connectés, années d'historique comprises, et fusionne les résultats en une seule liste triée. Les comptes restent connectés côté serveur (pas de reconnexion horaire) — une reconnexion simple est seulement nécessaire tous les 7 jours par compte.</div>
   </header>
@@ -136,6 +136,7 @@
 
   <div class="panel">
     <div class="panel-title"><span>3 — Critères de recherche</span></div>
+    <button class="btn secondary" id="latestBtn" style="margin-bottom:14px;">📥 Les 10 derniers mails reçus (tous comptes)</button>
     <div class="field"><label>Expéditeur (from:)</label><input type="text" id="from" placeholder="ex: google.com"></div>
     <div class="field"><label>Destinataire (to:)</label><input type="text" id="to" placeholder="ex: marcel.mellier@gmail.com"></div>
     <div class="field"><label>Objet (subject:)</label><input type="text" id="subject" placeholder="ex: facture, API key"></div>
@@ -365,10 +366,13 @@ function handleRedirectParams(){
   }
 }
 
-searchBtn.addEventListener('click', async () => {
+searchBtn.addEventListener('click', () => runSearch(buildQuery(), 20, null));
+
+document.getElementById('latestBtn').addEventListener('click', () => runSearch('in:inbox', 10, 10));
+
+async function runSearch(query, maxResults, sliceTo){
   const url = getBackendUrl();
   if (!url) return;
-  const query = buildQuery();
   errorMsg.textContent = '';
   const resultsPanel = document.getElementById('resultsPanel');
   const resultsList = document.getElementById('resultsList');
@@ -377,7 +381,7 @@ searchBtn.addEventListener('click', async () => {
   resultsList.innerHTML = '<div class="loading">Recherche en cours…</div>';
 
   try {
-    const res = await fetch(url + '/search?q=' + encodeURIComponent(query) + '&maxResults=20');
+    const res = await fetch(url + '/search?q=' + encodeURIComponent(query) + '&maxResults=' + (maxResults || 20));
     if (!res.ok) throw new Error('HTTP ' + res.status);
     const data = await res.json();
 
@@ -386,7 +390,8 @@ searchBtn.addEventListener('click', async () => {
       errorMsg.textContent = failed.map(a => `${a.email} : ${a.error}`).join(' — ');
     }
 
-    const merged = data.results || [];
+    let merged = data.results || [];
+    if (sliceTo) merged = merged.slice(0, sliceTo);
     resultCount.textContent = merged.length + ' résultat(s)';
     if (merged.length === 0){
       resultsList.innerHTML = '<div class="note">Aucun résultat pour cette requête.</div>';
@@ -440,7 +445,7 @@ searchBtn.addEventListener('click', async () => {
     resultsList.innerHTML = '';
     errorMsg.textContent = "Erreur : " + e.message;
   }
-});
+}
 
 // ===== Vue detaillee d'un mail (via le backend) =====
 const mailOverlay = document.getElementById('mailOverlay');
