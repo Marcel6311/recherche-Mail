@@ -108,7 +108,7 @@
 <div class="wrap">
 
   <header>
-    <div class="eyebrow">Recherche unifiée — historique complet <span style="float:right; opacity:0.7;">v5</span></div>
+    <div class="eyebrow">Recherche unifiée — historique complet <span style="float:right; opacity:0.7;">v6</span></div>
     <h1>Console de recherche mail</h1>
     <div class="sub">Interroge en direct les serveurs Gmail de tes comptes connectés, années d'historique comprises, et fusionne les résultats en une seule liste triée. Les comptes restent connectés côté serveur (pas de reconnexion horaire) — une reconnexion simple est seulement nécessaire tous les 7 jours par compte.</div>
   </header>
@@ -687,6 +687,32 @@ document.getElementById('untrashBtn').addEventListener('click', async () => {
 });
 
 loadBackendUrl();
+
+// ===== Réveil automatique du serveur (plan gratuit Render en veille) =====
+// Dès l'ouverture de la page, on envoie une requête discrète au backend
+// pour le sortir de veille pendant que l'utilisateur remplit ses critères.
+(function wakeUpBackend(){
+  const url = getBackendUrl();
+  if (!url) return;
+  const badge = backendBadge;
+  badge.textContent = 'réveil du serveur…';
+  const t0 = Date.now();
+  fetch(url + '/', { cache: 'no-store' })
+    .then(res => {
+      if (res.ok){
+        const secs = Math.round((Date.now() - t0) / 1000);
+        badge.textContent = secs > 5 ? 'en ligne (réveillé en ' + secs + 's)' : 'en ligne';
+        badge.className = 'setup-badge ok';
+      } else {
+        badge.textContent = 'erreur ' + res.status;
+        badge.className = 'setup-badge';
+      }
+    })
+    .catch(() => {
+      badge.textContent = 'injoignable';
+      badge.className = 'setup-badge';
+    });
+})();
 handleRedirectParams();
 checkBackend().then(refreshAccounts);
 renderQuery();
