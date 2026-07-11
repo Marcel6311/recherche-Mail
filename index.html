@@ -4,7 +4,6 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Recherche unifiée — Gmail multi-comptes</title>
-<script src="https://accounts.google.com/gsi/client" async defer></script>
 <style>
   :root{
     --bg: #0d0f0e;
@@ -42,18 +41,26 @@
 
   .setup-badge { font-size: 11px; padding: 3px 8px; border-radius: 6px; background: var(--panel-2); color: var(--muted); border: 1px solid var(--line); }
   .setup-badge.ok { color: var(--accent-2); border-color: var(--accent-2); }
+  .setup-badge.warn { color: var(--danger); border-color: var(--danger); }
 
   .accounts { display: flex; flex-direction: column; gap: 8px; margin-bottom: 12px; }
   .acct { display: flex; align-items: center; justify-content: space-between; gap: 10px; background: var(--panel-2); border: 1px solid var(--line); border-radius: 8px; padding: 9px 11px; }
   .acct.connected { border-color: var(--accent-2); }
+  .acct.needs { border-color: var(--danger); }
   .acct-email { font-family: var(--mono); font-size: 12.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .acct-actions { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
   .acct-status { font-size: 11px; color: var(--muted); }
   .acct-status.on { color: var(--accent-2); }
+  .acct-status.needs { color: var(--danger); }
   .btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; background: var(--accent-2); color: var(--white); border: none; border-radius: 9px; padding: 12px 14px; font-size: 14px; font-weight: 600; cursor: pointer; width: 100%; }
   .btn:disabled { background: var(--panel-2); color: var(--muted); cursor: not-allowed; }
   .btn.secondary { background: var(--panel-2); border: 1px solid var(--line); color: var(--white); font-weight: 500; }
   .btn.small { padding: 7px 10px; font-size: 12px; width: auto; }
+  .btn.danger-small { padding: 6px 9px; font-size: 11px; width: auto; background: transparent; border: 1px solid var(--line); color: var(--muted); }
   .note { font-size: 11.5px; color: var(--muted); margin-top: 8px; line-height: 1.5; }
+  .toast { font-size: 12.5px; padding: 10px 12px; border-radius: 8px; margin-bottom: 12px; }
+  .toast.ok { background: rgba(107,143,78,0.15); border: 1px solid var(--accent-2); color: var(--accent-2); }
+  .toast.err { background: rgba(181,84,58,0.15); border: 1px solid var(--danger); color: var(--danger); }
 
   .results { display: flex; flex-direction: column; gap: 8px; }
   .result { background: var(--panel-2); border: 1px solid var(--line); border-radius: 10px; padding: 12px; text-decoration: none; color: var(--white); display: block; }
@@ -66,50 +73,36 @@
   .result-account { display:inline-block; font-family: var(--mono); font-size: 10px; color: var(--accent); background: rgba(212,165,55,0.1); padding: 2px 6px; border-radius: 5px; margin-top: 6px; }
   .loading { text-align: center; color: var(--muted); font-size: 13px; padding: 20px 0; }
   .error-msg { color: var(--danger); font-size: 12.5px; margin-top: 8px; }
-
-  /* Vue détaillée d'un mail */
-  .mail-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.75); display: none; align-items: flex-start; justify-content: center; padding: 20px 12px; z-index: 100; overflow-y: auto; }
-  .mail-overlay.open { display: flex; }
-  .mail-card { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; max-width: 680px; width: 100%; padding: 18px; margin: auto 0; }
-  .mail-card-top { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; margin-bottom: 12px; }
-  .mail-subject { font-size: 16px; font-weight: 600; line-height: 1.35; }
-  .mail-close { background: var(--panel-2); border: 1px solid var(--line); color: var(--white); border-radius: 8px; padding: 6px 11px; font-size: 13px; cursor: pointer; flex: none; }
-  .mail-meta { font-size: 12.5px; color: var(--muted); line-height: 1.7; border-bottom: 1px solid var(--line); padding-bottom: 12px; margin-bottom: 12px; }
-  .mail-meta b { color: var(--white); font-weight: 500; }
-  .mail-body { font-size: 13.5px; line-height: 1.6; white-space: pre-wrap; word-break: break-word; user-select: text; -webkit-user-select: text; max-height: 55vh; overflow-y: auto; }
-  .mail-body.html-mode { white-space: normal; }
-  .mail-body a { color: var(--accent); }
-  .mail-actions { display: flex; gap: 8px; margin-top: 14px; flex-wrap: wrap; }
-  .mail-actions .btn { width: auto; padding: 9px 14px; font-size: 13px; }
-  .copied-flash { color: var(--accent-2); font-size: 12px; align-self: center; }
 </style>
 </head>
 <body>
 <div class="wrap">
 
   <header>
-    <div class="eyebrow">Recherche unifiée — historique complet <span style="float:right; opacity:0.7;">v3.0</span></div>
+    <div class="eyebrow">Recherche unifiée — historique complet</div>
     <h1>Console de recherche mail</h1>
-    <div class="sub">Interroge en direct les serveurs Gmail de tes comptes connectés, années d'historique comprises, et fusionne les résultats en une seule liste triée.</div>
+    <div class="sub">Interroge en direct les serveurs Gmail de tes comptes connectés, années d'historique comprises, et fusionne les résultats en une seule liste triée. Les comptes restent connectés côté serveur (pas de reconnexion horaire) — une reconnexion simple est seulement nécessaire tous les 7 jours par compte.</div>
   </header>
+
+  <div id="toastArea"></div>
 
   <div class="panel">
     <div class="panel-title">
-      <span>1 — Identifiant OAuth</span>
-      <span class="setup-badge" id="clientIdBadge">non configuré</span>
+      <span>1 — Serveur</span>
+      <span class="setup-badge" id="backendBadge">non configuré</span>
     </div>
     <div class="field">
-      <label>Client ID Google Cloud (se termine par .apps.googleusercontent.com)</label>
-      <input type="text" id="clientId" placeholder="colle ton Client ID ici">
+      <label>Adresse du backend (ex: https://recherche-mail-backend.onrender.com)</label>
+      <input type="text" id="backendUrl" placeholder="https://ton-service.onrender.com">
     </div>
-    <div class="note">Cette valeur n'est jamais envoyée ailleurs qu'à Google — elle reste dans cette page, pour cette session.</div>
+    <div class="note" id="backendNote">Renseigne l'URL de ton backend une seule fois — elle est mémorisée dans ce navigateur.</div>
   </div>
 
   <div class="panel">
-    <div class="panel-title"><span>2 — Comptes à connecter</span></div>
+    <div class="panel-title"><span>2 — Comptes connectés</span></div>
     <div class="accounts" id="accountsList"></div>
     <button class="btn secondary" id="connectBtn" disabled>Connecter un compte Gmail</button>
-    <div class="note" id="connectNote">Renseigne d'abord le Client ID ci-dessus.</div>
+    <div class="note" id="connectNote">Configure d'abord l'adresse du backend ci-dessus.</div>
   </div>
 
   <div class="panel">
@@ -151,155 +144,67 @@
 
 </div>
 
-<div class="mail-overlay" id="mailOverlay">
-  <div class="mail-card">
-    <div class="mail-card-top">
-      <div class="mail-subject" id="mailSubject">…</div>
-      <button class="mail-close" id="mailClose">Fermer ✕</button>
-    </div>
-    <div class="mail-meta" id="mailMeta"></div>
-    <div class="mail-body" id="mailBody">Chargement…</div>
-    <div class="mail-actions">
-      <button class="btn" id="copyBodyBtn">Copier le texte du mail</button>
-      <button class="btn secondary" id="copyAllBtn">Copier tout (en-têtes + texte)</button>
-      <span class="copied-flash" id="copiedFlash"></span>
-    </div>
-  </div>
-</div>
-
 <script>
-let tokenClient = null;
-let connectedAccounts = []; // {email, token}
-const activeOps = new Set();
-
-const clientIdInput = document.getElementById('clientId');
-const clientIdBadge = document.getElementById('clientIdBadge');
+const backendUrlInput = document.getElementById('backendUrl');
+const backendBadge = document.getElementById('backendBadge');
 const connectBtn = document.getElementById('connectBtn');
 const connectNote = document.getElementById('connectNote');
 const searchBtn = document.getElementById('searchBtn');
 const errorMsg = document.getElementById('errorMsg');
+const activeOps = new Set();
 
-function initTokenClient(retriesLeft){
-  if (retriesLeft === undefined) retriesLeft = 10;
-  const id = clientIdInput.value.trim();
-  if (!id) return;
-
-  if (!window.google || !window.google.accounts || !window.google.accounts.oauth2){
-    if (retriesLeft > 0){
-      clientIdBadge.textContent = 'chargement…';
-      connectNote.textContent = "Chargement du script Google en cours, patiente quelques secondes…";
-      setTimeout(() => initTokenClient(retriesLeft - 1), 400);
-      return;
-    } else {
-      clientIdBadge.textContent = 'échec';
-      errorMsg.textContent = "Le script Google (accounts.google.com/gsi/client) n'a pas pu se charger. Vérifie ta connexion internet, ou qu'aucun bloqueur de pub/traqueurs n'empêche accounts.google.com de se charger. Si tu ouvres ce fichier en double-clic (file://), essaie plutôt de le déposer sur ton GitHub Pages et de l'ouvrir via https://.";
-      return;
-    }
-  }
-
-  try {
-    tokenClient = google.accounts.oauth2.initTokenClient({
-      client_id: id,
-      scope: 'https://www.googleapis.com/auth/gmail.readonly',
-      callback: handleTokenResponse,
-      error_callback: (err) => {
-        errorMsg.textContent = "Erreur Google : " + (err && err.type ? err.type : JSON.stringify(err));
-      }
-    });
-    clientIdBadge.textContent = 'prêt';
-    clientIdBadge.classList.add('ok');
-    connectBtn.disabled = false;
-    connectNote.textContent = 'Clique pour connecter chacun de tes comptes (choisis un compte différent à chaque clic).';
-    errorMsg.textContent = '';
-  } catch(e){
-    clientIdBadge.textContent = 'erreur';
-    errorMsg.textContent = "Client ID invalide ou rejeté par Google : " + e.message;
-  }
+function getBackendUrl(){
+  return backendUrlInput.value.trim().replace(/\/+$/, '');
 }
 
-clientIdInput.addEventListener('blur', () => { saveClientId(); initTokenClient(); });
-clientIdInput.addEventListener('change', () => { saveClientId(); initTokenClient(); });
-
-function saveClientId(){
-  try { localStorage.setItem('rechercheMail_clientId', clientIdInput.value.trim()); } catch(e){}
+function saveBackendUrl(){
+  try { localStorage.setItem('rechercheMail_backendUrl', backendUrlInput.value.trim()); } catch(e){}
 }
-function loadClientId(){
+
+function loadBackendUrl(){
   try {
-    const saved = localStorage.getItem('rechercheMail_clientId');
-    if (saved) { clientIdInput.value = saved; initTokenClient(); }
+    const saved = localStorage.getItem('rechercheMail_backendUrl');
+    if (saved) backendUrlInput.value = saved;
   } catch(e){}
 }
-loadClientId();
-clientIdInput.addEventListener('input', () => {
-  clientIdBadge.textContent = 'non configuré';
-  clientIdBadge.classList.remove('ok');
-  connectBtn.disabled = true;
-  tokenClient = null;
-});
+
+async function checkBackend(){
+  const url = getBackendUrl();
+  if (!url){
+    backendBadge.textContent = 'non configuré';
+    backendBadge.className = 'setup-badge';
+    connectBtn.disabled = true;
+    connectNote.textContent = "Configure d'abord l'adresse du backend ci-dessus.";
+    return false;
+  }
+  backendBadge.textContent = 'vérification…';
+  try {
+    const res = await fetch(url + '/', { method: 'GET' });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    backendBadge.textContent = 'en ligne';
+    backendBadge.className = 'setup-badge ok';
+    connectBtn.disabled = false;
+    connectNote.textContent = "Clique pour connecter chacun de tes comptes Gmail (un aller-retour vers Google par compte).";
+    return true;
+  } catch(e){
+    backendBadge.textContent = 'injoignable';
+    backendBadge.className = 'setup-badge warn';
+    connectBtn.disabled = true;
+    connectNote.textContent = "Impossible de joindre ce backend. Vérifie l'URL, et que le service est bien démarré (un service gratuit Render peut prendre 30-60s à se réveiller).";
+    return false;
+  }
+}
+
+backendUrlInput.addEventListener('blur', () => { saveBackendUrl(); checkBackend().then(refreshAccounts); });
+backendUrlInput.addEventListener('change', () => { saveBackendUrl(); checkBackend().then(refreshAccounts); });
 
 connectBtn.addEventListener('click', () => {
-  if (!tokenClient) {
-    initTokenClient();
-    setTimeout(() => {
-      if (tokenClient) tokenClient.requestAccessToken({ prompt: 'select_account consent' });
-      else if (!errorMsg.textContent) errorMsg.textContent = "Le Client ID n'est pas encore reconnu — vérifie qu'il est bien collé en entier, sans espace.";
-    }, 600);
-    return;
-  }
-  errorMsg.textContent = '';
-  tokenClient.requestAccessToken({ prompt: 'select_account consent' });
+  const url = getBackendUrl();
+  if (!url) return;
+  // Navigation top-level (pas de popup) : evite les blocages Safari ITP
+  // rencontres avec l'ancienne architecture 100% cote client.
+  window.location.href = url + '/auth/start';
 });
-
-async function handleTokenResponse(resp){
-  if (resp.error){
-    errorMsg.textContent = "Connexion refusée ou annulée (" + resp.error + ").";
-    return;
-  }
-  try {
-    const profileRes = await fetch('https://www.googleapis.com/gmail/v1/users/me/profile', {
-      headers: { Authorization: 'Bearer ' + resp.access_token }
-    });
-    if (!profileRes.ok) throw new Error('profil illisible');
-    const profile = await profileRes.json();
-    const expiresAt = Date.now() + (resp.expires_in ? resp.expires_in * 1000 : 3600 * 1000);
-    const existing = connectedAccounts.find(a => a.email === profile.emailAddress);
-    if (existing) { existing.token = resp.access_token; existing.expiresAt = expiresAt; }
-    else { connectedAccounts.push({ email: profile.emailAddress, token: resp.access_token, expiresAt }); }
-    saveAccounts();
-    renderAccounts();
-    searchBtn.disabled = connectedAccounts.length === 0;
-  } catch(e){
-    errorMsg.textContent = "Erreur lors de la récupération du compte : " + e.message;
-  }
-}
-
-function saveAccounts(){
-  try { localStorage.setItem('rechercheMail_accounts', JSON.stringify(connectedAccounts)); } catch(e){}
-}
-
-function loadAccounts(){
-  try {
-    const saved = JSON.parse(localStorage.getItem('rechercheMail_accounts') || '[]');
-    const now = Date.now();
-    connectedAccounts = saved.filter(a => a.expiresAt && a.expiresAt > now);
-    if (connectedAccounts.length !== saved.length) saveAccounts(); // purge les jetons expirés
-  } catch(e){ connectedAccounts = []; }
-}
-
-function renderAccounts(){
-  const list = document.getElementById('accountsList');
-  if (connectedAccounts.length === 0){
-    list.innerHTML = "<div class=\"note\">Aucun compte connecté pour l'instant.</div>";
-    return;
-  }
-  list.innerHTML = '';
-  connectedAccounts.forEach(acc => {
-    const row = document.createElement('div');
-    row.className = 'acct connected';
-    row.innerHTML = `<span class="acct-email">${acc.email}</span><span class="acct-status on">● connecté</span>`;
-    list.appendChild(row);
-  });
-}
 
 function fieldVal(id){ return document.getElementById(id).value.trim(); }
 
@@ -339,53 +244,93 @@ document.querySelectorAll('.chip').forEach(chip => {
   });
 });
 
-async function fetchMessagesForAccount(acc, query){
-  const listRes = await fetch(
-    `https://www.googleapis.com/gmail/v1/users/me/messages?q=${encodeURIComponent(query)}&maxResults=20`,
-    { headers: { Authorization: 'Bearer ' + acc.token } }
-  );
-  if (!listRes.ok) {
-    if (listRes.status === 401) throw new Error(`${acc.email} : session expirée, reconnecte ce compte.`);
-    throw new Error(`${acc.email} : erreur de recherche (${listRes.status})`);
+async function refreshAccounts(){
+  const url = getBackendUrl();
+  const list = document.getElementById('accountsList');
+  if (!url){
+    list.innerHTML = "<div class=\"note\">Configure le backend pour voir tes comptes.</div>";
+    searchBtn.disabled = true;
+    return;
   }
-  const listData = await listRes.json();
-  const ids = (listData.messages || []).map(m => m.id);
+  try {
+    const res = await fetch(url + '/accounts');
+    const accounts = await res.json();
+    if (accounts.length === 0){
+      list.innerHTML = "<div class=\"note\">Aucun compte connecté pour l'instant.</div>";
+      searchBtn.disabled = true;
+      return;
+    }
+    list.innerHTML = '';
+    accounts.forEach(acc => {
+      const needsReconnect = acc.status === 'needs_reconnect';
+      const row = document.createElement('div');
+      row.className = 'acct ' + (needsReconnect ? 'needs' : 'connected');
+      row.innerHTML = `
+        <span class="acct-email">${acc.email}</span>
+        <div class="acct-actions">
+          <span class="acct-status ${needsReconnect ? 'needs' : 'on'}">${needsReconnect ? '● à reconnecter' : '● connecté'}</span>
+          <button class="btn danger-small" data-email="${acc.email}">retirer</button>
+        </div>`;
+      row.querySelector('button').addEventListener('click', () => disconnectAccount(acc.email));
+      list.appendChild(row);
+    });
+    searchBtn.disabled = false;
+  } catch(e){
+    list.innerHTML = "<div class=\"note\">Impossible de charger les comptes depuis le backend.</div>";
+    searchBtn.disabled = true;
+  }
+}
 
-  const messages = await Promise.all(ids.map(async id => {
-    const res = await fetch(
-      `https://www.googleapis.com/gmail/v1/users/me/messages/${id}?format=metadata&metadataHeaders=Subject&metadataHeaders=From&metadataHeaders=Date`,
-      { headers: { Authorization: 'Bearer ' + acc.token } }
-    );
-    if (!res.ok) return null;
-    const data = await res.json();
-    const headers = {};
-    (data.payload?.headers || []).forEach(h => headers[h.name] = h.value);
-    return {
-      account: acc.email,
-      id: data.id,
-      snippet: data.snippet || '',
-      subject: headers['Subject'] || '(sans objet)',
-      from: headers['From'] || '',
-      date: headers['Date'] || '',
-      internalDate: parseInt(data.internalDate || '0', 10)
-    };
-  }));
-  return messages.filter(Boolean);
+async function disconnectAccount(email){
+  const url = getBackendUrl();
+  if (!url) return;
+  await fetch(url + '/accounts/' + encodeURIComponent(email), { method: 'DELETE' });
+  refreshAccounts();
+}
+
+function showToast(message, type){
+  const area = document.getElementById('toastArea');
+  const div = document.createElement('div');
+  div.className = 'toast ' + (type === 'err' ? 'err' : 'ok');
+  div.textContent = message;
+  area.innerHTML = '';
+  area.appendChild(div);
+}
+
+function handleRedirectParams(){
+  const params = new URLSearchParams(window.location.search);
+  const connected = params.get('connected');
+  const authError = params.get('auth_error');
+  if (connected) showToast('Compte connecté : ' + connected, 'ok');
+  if (authError) showToast('Connexion échouée (' + authError + '). Réessaie.', 'err');
+  if (connected || authError){
+    const clean = window.location.origin + window.location.pathname;
+    window.history.replaceState({}, document.title, clean);
+  }
 }
 
 searchBtn.addEventListener('click', async () => {
+  const url = getBackendUrl();
+  if (!url) return;
   const query = buildQuery();
   errorMsg.textContent = '';
   const resultsPanel = document.getElementById('resultsPanel');
   const resultsList = document.getElementById('resultsList');
   const resultCount = document.getElementById('resultCount');
   resultsPanel.style.display = 'block';
-  resultsList.innerHTML = '<div class="loading">Recherche en cours dans ' + connectedAccounts.length + ' compte(s)…</div>';
+  resultsList.innerHTML = '<div class="loading">Recherche en cours…</div>';
 
   try {
-    const allResults = await Promise.all(connectedAccounts.map(acc => fetchMessagesForAccount(acc, query).catch(e => { errorMsg.textContent += e.message + ' '; return []; })));
-    const merged = allResults.flat().sort((a,b) => b.internalDate - a.internalDate);
+    const res = await fetch(url + '/search?q=' + encodeURIComponent(query) + '&maxResults=20');
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const data = await res.json();
 
+    const failed = (data.accounts || []).filter(a => !a.ok);
+    if (failed.length){
+      errorMsg.textContent = failed.map(a => `${a.email} : ${a.error}`).join(' — ');
+    }
+
+    const merged = data.results || [];
     resultCount.textContent = merged.length + ' résultat(s)';
     if (merged.length === 0){
       resultsList.innerHTML = '<div class="note">Aucun résultat pour cette requête.</div>';
@@ -395,18 +340,19 @@ searchBtn.addEventListener('click', async () => {
     merged.forEach(m => {
       const a = document.createElement('a');
       a.className = 'result';
-      a.href = '#';
+      a.href = m.link || '#';
+      a.target = '_blank';
+      a.rel = 'noopener';
       const dateShort = m.date ? new Date(m.date).toLocaleDateString('fr-CH', {day:'2-digit', month:'2-digit', year:'numeric'}) : '';
       a.innerHTML = `
         <div class="result-top">
           <div class="result-from">${(m.from || '').replace(/</,'&lt;').split('<')[0].trim()}</div>
           <div class="result-date">${dateShort}</div>
         </div>
-        <div class="result-subject">${m.subject}</div>
-        <div class="result-snippet">${m.snippet}</div>
+        <div class="result-subject">${m.subject || '(sans objet)'}</div>
+        <div class="result-snippet">${m.snippet || ''}</div>
         <div class="result-account">${m.account}</div>
       `;
-      a.addEventListener('click', (e) => { e.preventDefault(); openMail(m); });
       resultsList.appendChild(a);
     });
   } catch(e){
@@ -415,181 +361,9 @@ searchBtn.addEventListener('click', async () => {
   }
 });
 
-// ===== Vue détaillée d'un mail =====
-const mailOverlay = document.getElementById('mailOverlay');
-const mailSubject = document.getElementById('mailSubject');
-const mailMeta = document.getElementById('mailMeta');
-const mailBody = document.getElementById('mailBody');
-const copiedFlash = document.getElementById('copiedFlash');
-let currentMailText = '';
-let currentMailHeadersText = '';
-
-document.getElementById('mailClose').addEventListener('click', () => mailOverlay.classList.remove('open'));
-mailOverlay.addEventListener('click', (e) => { if (e.target === mailOverlay) mailOverlay.classList.remove('open'); });
-
-function b64Decode(data){
-  // Gmail utilise le base64 "URL-safe"
-  const normalized = data.replace(/-/g, '+').replace(/_/g, '/');
-  const bin = atob(normalized);
-  const bytes = new Uint8Array(bin.length);
-  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
-  return new TextDecoder('utf-8').decode(bytes);
-}
-
-function extractBody(payload){
-  // Cherche récursivement text/plain, sinon text/html
-  let plain = null, html = null;
-  function walk(part){
-    if (!part) return;
-    if (part.mimeType === 'text/plain' && part.body && part.body.data && plain === null) plain = b64Decode(part.body.data);
-    if (part.mimeType === 'text/html' && part.body && part.body.data && html === null) html = b64Decode(part.body.data);
-    (part.parts || []).forEach(walk);
-  }
-  walk(payload);
-  return { plain, html };
-}
-
-function stripHtml(html){
-  const doc = new DOMParser().parseFromString(html, 'text/html');
-  doc.querySelectorAll('style,script').forEach(el => el.remove());
-  return doc.body ? doc.body.innerText.trim() : '';
-}
-
-async function openMail(m){
-  const acc = connectedAccounts.find(a => a.email === m.account);
-  if (!acc){ errorMsg.textContent = "Compte " + m.account + " plus connecté — reconnecte-le d'abord."; return; }
-
-  mailSubject.textContent = m.subject;
-  mailMeta.innerHTML = '';
-  mailBody.textContent = 'Chargement…';
-  mailBody.classList.remove('html-mode');
-  copiedFlash.textContent = '';
-  mailOverlay.classList.add('open');
-
-  try {
-    const res = await fetch(
-      `https://www.googleapis.com/gmail/v1/users/me/messages/${m.id}?format=full`,
-      { headers: { Authorization: 'Bearer ' + acc.token } }
-    );
-    if (!res.ok){
-      if (res.status === 401) throw new Error("Session expirée pour " + m.account + " — reconnecte ce compte.");
-      throw new Error("Lecture impossible (" + res.status + ")");
-    }
-    const data = await res.json();
-    const headers = {};
-    (data.payload?.headers || []).forEach(h => headers[h.name] = h.value);
-
-    const esc = s => (s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;');
-    mailMeta.innerHTML =
-      `<div><b>De :</b> ${esc(headers['From'])}</div>` +
-      `<div><b>À :</b> ${esc(headers['To'] || '')}</div>` +
-      (headers['Cc'] ? `<div><b>Cc :</b> ${esc(headers['Cc'])}</div>` : '') +
-      `<div><b>Date :</b> ${esc(headers['Date'])}</div>` +
-      `<div><b>Compte :</b> ${esc(m.account)}</div>`;
-
-    const { plain, html } = extractBody(data.payload);
-    if (plain){
-      currentMailText = plain.trim();
-      mailBody.textContent = currentMailText;
-    } else if (html){
-      currentMailText = stripHtml(html);
-      mailBody.textContent = currentMailText || '(contenu HTML sans texte lisible)';
-    } else {
-      currentMailText = data.snippet || '';
-      mailBody.textContent = currentMailText || '(corps du message introuvable — probablement uniquement des pièces jointes)';
-    }
-
-    // Pièces jointes téléchargeables
-    const attachments = [];
-    (function findAtt(part){
-      if (!part) return;
-      if (part.filename && part.body && part.body.attachmentId){
-        attachments.push({ filename: part.filename, attachmentId: part.body.attachmentId, mimeType: part.mimeType || 'application/octet-stream', size: part.body.size || 0 });
-      }
-      (part.parts || []).forEach(findAtt);
-    })(data.payload);
-
-    if (attachments.length){
-      const attDiv = document.createElement('div');
-      attDiv.innerHTML = '<b>Pièces jointes :</b> ';
-      attachments.forEach(att => {
-        const btn = document.createElement('button');
-        btn.className = 'mail-close';
-        btn.style.margin = '3px 4px 3px 0';
-        const sizeKo = att.size ? ' (' + Math.round(att.size/1024) + ' Ko)' : '';
-        btn.textContent = '⬇ ' + att.filename + sizeKo;
-        btn.addEventListener('click', () => downloadAttachment(acc, m.id, att, btn));
-        attDiv.appendChild(btn);
-      });
-      mailMeta.appendChild(attDiv);
-    }
-
-    currentMailHeadersText =
-      "De : " + (headers['From'] || '') + "\n" +
-      "À : " + (headers['To'] || '') + "\n" +
-      (headers['Cc'] ? "Cc : " + headers['Cc'] + "\n" : "") +
-      "Date : " + (headers['Date'] || '') + "\n" +
-      "Objet : " + (headers['Subject'] || '') + "\n" +
-      (attachments.length ? "Pièces jointes : " + attachments.map(a => a.filename).join(', ') + "\n" : "");
-  } catch(e){
-    mailBody.textContent = "Erreur : " + e.message;
-    currentMailText = '';
-    currentMailHeadersText = '';
-  }
-}
-
-async function downloadAttachment(acc, messageId, att, btn){
-  const original = btn.textContent;
-  btn.textContent = '⏳ ' + att.filename;
-  btn.disabled = true;
-  try {
-    const res = await fetch(
-      `https://www.googleapis.com/gmail/v1/users/me/messages/${messageId}/attachments/${att.attachmentId}`,
-      { headers: { Authorization: 'Bearer ' + acc.token } }
-    );
-    if (!res.ok){
-      if (res.status === 401) throw new Error("Session expirée — reconnecte " + acc.email);
-      throw new Error("Téléchargement impossible (" + res.status + ")");
-    }
-    const data = await res.json();
-    const normalized = data.data.replace(/-/g, '+').replace(/_/g, '/');
-    const bin = atob(normalized);
-    const bytes = new Uint8Array(bin.length);
-    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
-    const blob = new Blob([bytes], { type: att.mimeType });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = att.filename;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    setTimeout(() => URL.revokeObjectURL(url), 5000);
-    btn.textContent = '✓ ' + att.filename;
-    setTimeout(() => { btn.textContent = original; btn.disabled = false; }, 2500);
-  } catch(e){
-    btn.textContent = original;
-    btn.disabled = false;
-    copiedFlash.textContent = "Erreur pièce jointe : " + e.message;
-  }
-}
-
-async function copyText(text){
-  try {
-    await navigator.clipboard.writeText(text);
-    copiedFlash.textContent = '✓ copié';
-    setTimeout(() => copiedFlash.textContent = '', 2000);
-  } catch(e){
-    copiedFlash.textContent = 'Copie refusée par le navigateur — sélectionne le texte manuellement.';
-  }
-}
-
-document.getElementById('copyBodyBtn').addEventListener('click', () => copyText(currentMailText));
-document.getElementById('copyAllBtn').addEventListener('click', () => copyText(currentMailHeadersText + "\n" + currentMailText));
-
-loadAccounts();
-renderAccounts();
-searchBtn.disabled = connectedAccounts.length === 0;
+loadBackendUrl();
+handleRedirectParams();
+checkBackend().then(refreshAccounts);
 renderQuery();
 </script>
 </body>
