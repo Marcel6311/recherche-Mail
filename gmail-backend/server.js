@@ -477,6 +477,39 @@ app.post('/trash', async (req, res) => {
   }
 });
 
+// ---------- Restauration depuis la corbeille ----------
+// Recoit { items: [ { account, ids: [...] }, ... ] } et remet les messages
+// dans la boite de reception (retire TRASH, ajoute INBOX).
+
+app.post('/untrash', async (req, res) => {
+  try {
+    const items = req.body && req.body.items;
+    if (!Array.isArray(items) || items.length === 0) {
+      return res.status(400).json({ error: 'items manquants' });
+    }
+
+    const outcomes = await Promise.all(items.map(async ({ account, ids }) => {
+      try {
+        if (!Array.isArray(ids) || ids.length === 0) return { account, ok: true, restored: 0 };
+        const client = await getAuthedClientFor(account);
+        const gmail = google.gmail({ version: 'v1', auth: client });
+        await gmail.users.messages.batchModify({
+          userId: 'me',
+          requestBody: { ids, removeLabelIds: ['TRASH'], addLabelIds: ['INBOX'] },
+        });
+        return { account, ok: true, restored: ids.length };
+      } catch (err) {
+        console.error(`Erreur restauration pour ${account}`, err.message);
+        return { account, ok: false, error: err.message, restored: 0 };
+      }
+    }));
+
+    res.json({ outcomes });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 app.listen(PORT, () => {
   console.log(`Recherche-Mail backend demarre sur le port ${PORT} (stockage: ${USE_REDIS ? 'Upstash Redis' : 'fichier local'})`);
 });
