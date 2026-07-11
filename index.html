@@ -108,7 +108,7 @@
 <div class="wrap">
 
   <header>
-    <div class="eyebrow">Recherche unifiée — historique complet <span style="float:right; opacity:0.7;">v6</span></div>
+    <div class="eyebrow">Recherche unifiée — historique complet <span style="float:right; opacity:0.7;">v7</span></div>
     <h1>Console de recherche mail</h1>
     <div class="sub">Interroge en direct les serveurs Gmail de tes comptes connectés, années d'historique comprises, et fusionne les résultats en une seule liste triée. Les comptes restent connectés côté serveur (pas de reconnexion horaire) — une reconnexion simple est seulement nécessaire tous les 7 jours par compte.</div>
   </header>
@@ -194,6 +194,7 @@
     <div class="mail-actions">
       <button class="btn" id="copyBodyBtn">Copier le texte</button>
       <button class="btn secondary" id="copyAllBtn">Copier tout (en-têtes + texte)</button>
+      <button class="btn secondary" id="translateBtn">🌐 Traduire en français</button>
       <span class="copied-flash" id="copiedFlash"></span>
     </div>
   </div>
@@ -522,6 +523,22 @@ async function copyText(text){
 
 document.getElementById('copyBodyBtn').addEventListener('click', () => copyText(currentMailText));
 document.getElementById('copyAllBtn').addEventListener('click', () => copyText(currentMailHeadersText + "\n" + currentMailText));
+
+document.getElementById('translateBtn').addEventListener('click', () => {
+  if (!currentMailText){
+    copiedFlash.textContent = 'Aucun texte à traduire.';
+    return;
+  }
+  const MAX = 4800; // limite de longueur d'URL acceptée par Google Translate
+  let text = currentMailText;
+  if (text.length > MAX){
+    text = text.slice(0, MAX);
+    copiedFlash.textContent = 'Mail long : seul le début (~5000 caractères) est envoyé à la traduction.';
+    setTimeout(() => copiedFlash.textContent = '', 6000);
+  }
+  const url = 'https://translate.google.com/?sl=auto&tl=fr&op=translate&text=' + encodeURIComponent(text);
+  window.open(url, '_blank', 'noopener');
+});
 
 // ===== Selection et mise a la corbeille =====
 let currentResults = [];
