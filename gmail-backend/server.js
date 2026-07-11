@@ -325,6 +325,119 @@ app.get('/search', async (req, res) => {
   }
 });
 
+// ---------- Lecture complete d'un message ----------
+
+function decodeBase64Url(data) {
+  return Buffer.from(data.replace(/-/g, '+').replace(/_/g, '/'), 'base64');
+}
+
+function extractBodyAndAttachments(payload) {
+  let plain = null;
+  let html = null;
+  const attachments = [];
+
+  function walk(part) {
+    if (!part) return;
+    if (part.filename && part.body && part.body.attachmentId) {
+      attachments.push({
+        filename: part.filename,
+        attachmentId: part.body.attachmentId,
+        mimeType: part.mimeType || 'application/octet-stream',
+        size: part.body.size || 0,
+      });
+    } else if (part.mimeType === 'text/plain' && part.body && part.body.data && plain === null) {
+      plain = decodeBase64Url(part.body.data).toString('utf8');
+    } else if (part.mimeType === 'text/html' && part.body && part.body.data && html === null) {
+      html = decodeBase64Url(part.body.data).toString('utf8');
+    }
+    (part.parts || []).forEach(walk);
+  }
+  walk(payload);
+  return { plain, html, attachments };
+}
+
+// Conversion HTML -> texte lisible, sans dependance externe
+function htmlToText(html) {
+  return html
+    .replace(/<style[\s\S]*?<\/style>/gi, '')
+    .replace(/<script[\s\S]*?<\/script>/gi, '')
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<\/(p|div|tr|li|h[1-6]|table)>/gi, '\n')
+    .replace(/<li[^>]*>/gi, '• ')
+    .replace(/<[^>]+>/g, '')
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
+
+app.get('/message/:email/:id', async (req, res) => {
+  try {
+    const email = decodeURIComponent(req.params.email);
+    const client = await getAuthedClientFor(email);
+    const gmail = google.gmail({ version: 'v1', auth: client });
+
+    const msg = await gmail.users.messages.get({
+      userId: 'me',
+      id: req.params.id,
+      format: 'full',
+    });
+
+    const headers = msg.data.payload.headers || [];
+    const { plain, html, attachments } = extractBodyAndAttachments(msg.data.payload);
+
+    let bodyText = '';
+    if (plain) bodyText = plain.trim();
+    else if (html) bodyText = htmlToText(html);
+    else bodyText = msg.data.snippet || '';
+
+    res.json({
+      account: email,
+      id: msg.data.id,
+      from: extractHeader(headers, 'From'),
+      to: extractHeader(headers, 'To'),
+      cc: extractHeader(headers, 'Cc'),
+      date: extractHeader(headers, 'Date'),
+      subject: extractHeader(headers, 'Subject'),
+      body: bodyText,
+      attachments,
+    });
+  } catch (err) {
+    console.error('Erreur lecture message', err.message);
+    const status = err.message && (err.message.includes('invalid_grant') || err.message.includes('invalid_token')) ? 401 : 500;
+    res.status(status).json({ error: err.message });
+  }
+});
+
+app.get('/attachment/:email/:messageId/:attachmentId', async (req, res) => {
+  try {
+    const email = decodeURIComponent(req.params.email);
+    const client = await getAuthedClientFor(email);
+    const gmail = google.gmail({ version: 'v1', auth: client });
+
+    const att = await gmail.users.messages.attachments.get({
+      userId: 'me',
+      messageId: req.params.messageId,
+      id: req.params.attachmentId,
+    });
+
+    const buffer = decodeBase64Url(att.data.data);
+    const filename = (req.query.filename || 'piece-jointe').replace(/[\r\n"]/g, '');
+    const mime = req.query.mime || 'application/octet-stream';
+
+    res.setHeader('Content-Type', mime);
+    res.setHeader('Content-Disposition', `attachment; filename*=UTF-8''${encodeURIComponent(filename)}`);
+    res.send(buffer);
+  } catch (err) {
+    console.error('Erreur piece jointe', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 app.listen(PORT, () => {
   console.log(`Recherche-Mail backend demarre sur le port ${PORT} (stockage: ${USE_REDIS ? 'Upstash Redis' : 'fichier local'})`);
 });
