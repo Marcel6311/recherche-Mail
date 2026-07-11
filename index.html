@@ -108,7 +108,7 @@
 <div class="wrap">
 
   <header>
-    <div class="eyebrow">Recherche unifiée — historique complet <span style="float:right; opacity:0.7;">v3</span></div>
+    <div class="eyebrow">Recherche unifiée — historique complet <span style="float:right; opacity:0.7;">v4</span></div>
     <h1>Console de recherche mail</h1>
     <div class="sub">Interroge en direct les serveurs Gmail de tes comptes connectés, années d'historique comprises, et fusionne les résultats en une seule liste triée. Les comptes restent connectés côté serveur (pas de reconnexion horaire) — une reconnexion simple est seulement nécessaire tous les 7 jours par compte.</div>
   </header>
@@ -150,6 +150,7 @@
       <div class="checks">
         <div class="chip" data-op="has:attachment">Avec pièce jointe</div>
         <div class="chip" data-op="in:anywhere">Chercher partout</div>
+        <div class="chip" data-op="in:trash">🗑 Dans la corbeille</div>
         <div class="chip" data-op="is:unread">Non lus</div>
         <div class="chip" data-op="is:starred">Suivis</div>
       </div>
@@ -174,6 +175,7 @@
     <div class="trash-bar" id="trashBar">
       <span class="count" id="trashCount">0 sélectionné</span>
       <button class="btn danger small-inline" id="trashBtn">🗑 Mettre à la corbeille</button>
+      <button class="btn secondary small-inline" id="untrashBtn">↩ Restaurer (depuis la corbeille)</button>
       <span class="copied-flash" id="trashFlash"></span>
     </div>
     <div class="results" id="resultsList"></div>
@@ -601,6 +603,76 @@ document.getElementById('trashBtn').addEventListener('click', async () => {
       showToast(trashed + ' mail' + (trashed > 1 ? 's' : '') + ' à la corbeille (récupérables 30 jours)', 'ok');
     } else {
       flash.textContent = trashed + ' supprimé(s), échecs : ' + problems.join(', ');
+      showToast('Certains comptes ont échoué : ' + problems.join(', '), 'err');
+    }
+  } catch(e){
+    flash.textContent = 'Erreur : ' + e.message;
+  } finally {
+    btn.disabled = false;
+    setTimeout(() => { flash.textContent = ''; }, 6000);
+  }
+});
+
+document.getElementById('untrashBtn').addEventListener('click', async () => {
+  const n = selectedIds.size;
+  if (n === 0) return;
+  const sure = confirm(
+    'Restaurer ' + n + ' mail' + (n > 1 ? 's' : '') + ' depuis la corbeille ?\n\n' +
+    'Ils seront remis dans la boîte de réception de leur compte.'
+  );
+  if (!sure) return;
+
+  const url = getBackendUrl();
+  if (!url) return;
+
+  const byAccount = {};
+  selectedIds.forEach(key => {
+    const sep = key.indexOf('|');
+    const account = key.slice(0, sep);
+    const id = key.slice(sep + 1);
+    (byAccount[account] = byAccount[account] || []).push(id);
+  });
+  const items = Object.entries(byAccount).map(([account, ids]) => ({ account, ids }));
+
+  const flash = document.getElementById('trashFlash');
+  const btn = document.getElementById('untrashBtn');
+  btn.disabled = true;
+  flash.textContent = 'Restauration en cours…';
+
+  try {
+    const res = await fetch(url + '/untrash', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ items })
+    });
+    if (!res.ok){
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error || ('HTTP ' + res.status));
+    }
+    const data = await res.json();
+
+    let restored = 0;
+    const problems = [];
+    (data.outcomes || []).forEach(o => {
+      if (o.ok) restored += o.restored;
+      else problems.push(o.account + ' (' + (o.error || 'erreur') + ')');
+    });
+
+    const okAccounts = new Set((data.outcomes || []).filter(o => o.ok).map(o => o.account));
+    document.querySelectorAll('.result-check input').forEach(cb => {
+      if (cb.checked && okAccounts.has(cb.dataset.key.slice(0, cb.dataset.key.indexOf('|')))){
+        cb.closest('.result-row').remove();
+        selectedIds.delete(cb.dataset.key);
+      }
+    });
+    updateTrashBar();
+    document.getElementById('selectAll').checked = false;
+
+    if (problems.length === 0){
+      flash.textContent = '✓ ' + restored + ' mail' + (restored > 1 ? 's' : '') + ' restauré' + (restored > 1 ? 's' : '');
+      showToast(restored + ' mail' + (restored > 1 ? 's' : '') + ' remis dans la boîte de réception', 'ok');
+    } else {
+      flash.textContent = restored + ' restauré(s), échecs : ' + problems.join(', ');
       showToast('Certains comptes ont échoué : ' + problems.join(', '), 'err');
     }
   } catch(e){
