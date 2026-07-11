@@ -268,6 +268,7 @@ async function searchAccount(email, query, maxResults) {
           id: m.id,
           threadId: m.threadId,
           snippet: msg.data.snippet,
+          labels: msg.data.labelIds || [],
           from: extractHeader(headers, 'From'),
           to: extractHeader(headers, 'To'),
           subject: extractHeader(headers, 'Subject'),
