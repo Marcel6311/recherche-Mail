@@ -46,7 +46,7 @@ if (!USE_REDIS) {
 const DATA_FILE = path.join(__dirname, 'data', 'tokens.enc.json');
 const REDIS_KEY = 'recherche_mail_accounts';
 const SCOPES = [
-  'https://www.googleapis.com/auth/gmail.readonly',
+  'https://www.googleapis.com/auth/gmail.modify',
   'https://www.googleapis.com/auth/userinfo.email',
   'openid',
 ];
@@ -434,6 +434,45 @@ app.get('/attachment/:email/:messageId/:attachmentId', async (req, res) => {
     res.send(buffer);
   } catch (err) {
     console.error('Erreur piece jointe', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ---------- Mise a la corbeille (reversible 30 jours dans Gmail) ----------
+// Recoit { items: [ { account, ids: [...] }, ... ] } et met tous les
+// messages listes a la corbeille du compte correspondant.
+
+app.post('/trash', async (req, res) => {
+  try {
+    const items = req.body && req.body.items;
+    if (!Array.isArray(items) || items.length === 0) {
+      return res.status(400).json({ error: 'items manquants' });
+    }
+
+    const outcomes = await Promise.all(items.map(async ({ account, ids }) => {
+      try {
+        if (!Array.isArray(ids) || ids.length === 0) return { account, ok: true, trashed: 0 };
+        const client = await getAuthedClientFor(account);
+        const gmail = google.gmail({ version: 'v1', auth: client });
+        await gmail.users.messages.batchModify({
+          userId: 'me',
+          requestBody: { ids, addLabelIds: ['TRASH'], removeLabelIds: ['INBOX'] },
+        });
+        return { account, ok: true, trashed: ids.length };
+      } catch (err) {
+        console.error(`Erreur corbeille pour ${account}`, err.message);
+        const needsReconnect = err.message && (
+          err.message.includes('insufficient') ||
+          err.message.includes('Insufficient') ||
+          err.message.includes('invalid_grant') ||
+          err.message.includes('invalid_token')
+        );
+        return { account, ok: false, needsReconnect, error: err.message, trashed: 0 };
+      }
+    }));
+
+    res.json({ outcomes });
+  } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
