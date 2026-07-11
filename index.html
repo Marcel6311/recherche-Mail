@@ -89,13 +89,26 @@
   .att-btn { background: var(--panel-2); border: 1px solid var(--line); color: var(--white); border-radius: 8px; padding: 6px 11px; font-size: 12.5px; cursor: pointer; margin: 3px 4px 3px 0; text-decoration: none; display: inline-block; }
   .att-btn:hover { border-color: var(--accent); }
   .copied-flash { color: var(--accent-2); font-size: 12px; }
+
+  /* Selection et corbeille */
+  .result-row { display: flex; align-items: stretch; gap: 8px; }
+  .result-row .result { flex: 1; min-width: 0; }
+  .result-check { flex: none; display: flex; align-items: center; padding: 0 2px; }
+  .result-check input { width: 17px; height: 17px; accent-color: var(--danger); cursor: pointer; }
+  .trash-bar { display: none; align-items: center; gap: 10px; flex-wrap: wrap; background: var(--panel-2); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; margin-bottom: 10px; }
+  .trash-bar.visible { display: flex; }
+  .trash-bar .count { font-size: 12.5px; color: var(--muted); }
+  .btn.danger { background: var(--danger); }
+  .btn.small-inline { width: auto; padding: 8px 13px; font-size: 13px; }
+  .select-all-row { display: flex; align-items: center; gap: 8px; font-size: 12.5px; color: var(--muted); margin-bottom: 10px; cursor: pointer; user-select: none; }
+  .select-all-row input { width: 16px; height: 16px; accent-color: var(--danger); cursor: pointer; }
 </style>
 </head>
 <body>
 <div class="wrap">
 
   <header>
-    <div class="eyebrow">Recherche unifiée — historique complet <span style="float:right; opacity:0.7;">v2</span></div>
+    <div class="eyebrow">Recherche unifiée — historique complet <span style="float:right; opacity:0.7;">v3</span></div>
     <h1>Console de recherche mail</h1>
     <div class="sub">Interroge en direct les serveurs Gmail de tes comptes connectés, années d'historique comprises, et fusionne les résultats en une seule liste triée. Les comptes restent connectés côté serveur (pas de reconnexion horaire) — une reconnexion simple est seulement nécessaire tous les 7 jours par compte.</div>
   </header>
@@ -155,6 +168,14 @@
 
   <div class="panel" id="resultsPanel" style="display:none;">
     <div class="panel-title"><span>Résultats</span><span id="resultCount" class="setup-badge"></span></div>
+    <label class="select-all-row" id="selectAllRow" style="display:none;">
+      <input type="checkbox" id="selectAll"> Tout sélectionner
+    </label>
+    <div class="trash-bar" id="trashBar">
+      <span class="count" id="trashCount">0 sélectionné</span>
+      <button class="btn danger small-inline" id="trashBtn">🗑 Mettre à la corbeille</button>
+      <span class="copied-flash" id="trashFlash"></span>
+    </div>
     <div class="results" id="resultsList"></div>
   </div>
 
@@ -369,7 +390,27 @@ searchBtn.addEventListener('click', async () => {
       return;
     }
     resultsList.innerHTML = '';
+    currentResults = merged;
+    selectedIds.clear();
+    updateTrashBar();
+    document.getElementById('selectAllRow').style.display = merged.length ? 'flex' : 'none';
+    document.getElementById('selectAll').checked = false;
     merged.forEach(m => {
+      const row = document.createElement('div');
+      row.className = 'result-row';
+
+      const checkWrap = document.createElement('div');
+      checkWrap.className = 'result-check';
+      const cb = document.createElement('input');
+      cb.type = 'checkbox';
+      cb.dataset.key = m.account + '|' + m.id;
+      cb.addEventListener('change', () => {
+        if (cb.checked) selectedIds.add(cb.dataset.key);
+        else selectedIds.delete(cb.dataset.key);
+        updateTrashBar();
+      });
+      checkWrap.appendChild(cb);
+
       const a = document.createElement('a');
       a.className = 'result';
       a.href = '#';
@@ -384,7 +425,10 @@ searchBtn.addEventListener('click', async () => {
         <div class="result-account">${m.account}</div>
       `;
       a.addEventListener('click', (e) => { e.preventDefault(); openMail(m); });
-      resultsList.appendChild(a);
+
+      row.appendChild(checkWrap);
+      row.appendChild(a);
+      resultsList.appendChild(row);
     });
   } catch(e){
     resultsList.innerHTML = '';
@@ -473,6 +517,99 @@ async function copyText(text){
 
 document.getElementById('copyBodyBtn').addEventListener('click', () => copyText(currentMailText));
 document.getElementById('copyAllBtn').addEventListener('click', () => copyText(currentMailHeadersText + "\n" + currentMailText));
+
+// ===== Selection et mise a la corbeille =====
+let currentResults = [];
+const selectedIds = new Set();
+
+function updateTrashBar(){
+  const bar = document.getElementById('trashBar');
+  const count = document.getElementById('trashCount');
+  count.textContent = selectedIds.size + ' sélectionné' + (selectedIds.size > 1 ? 's' : '');
+  bar.classList.toggle('visible', selectedIds.size > 0);
+}
+
+document.getElementById('selectAll').addEventListener('change', (e) => {
+  const check = e.target.checked;
+  selectedIds.clear();
+  document.querySelectorAll('.result-check input').forEach(cb => {
+    cb.checked = check;
+    if (check) selectedIds.add(cb.dataset.key);
+  });
+  updateTrashBar();
+});
+
+document.getElementById('trashBtn').addEventListener('click', async () => {
+  const n = selectedIds.size;
+  if (n === 0) return;
+  const sure = confirm(
+    'Mettre ' + n + ' mail' + (n > 1 ? 's' : '') + ' à la corbeille ?\n\n' +
+    'Ils resteront récupérables 30 jours dans la corbeille Gmail de chaque compte.'
+  );
+  if (!sure) return;
+
+  const url = getBackendUrl();
+  if (!url) return;
+
+  // Regrouper les ids par compte
+  const byAccount = {};
+  selectedIds.forEach(key => {
+    const sep = key.indexOf('|');
+    const account = key.slice(0, sep);
+    const id = key.slice(sep + 1);
+    (byAccount[account] = byAccount[account] || []).push(id);
+  });
+  const items = Object.entries(byAccount).map(([account, ids]) => ({ account, ids }));
+
+  const flash = document.getElementById('trashFlash');
+  const btn = document.getElementById('trashBtn');
+  btn.disabled = true;
+  flash.textContent = 'Suppression en cours…';
+
+  try {
+    const res = await fetch(url + '/trash', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ items })
+    });
+    if (!res.ok){
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error || ('HTTP ' + res.status));
+    }
+    const data = await res.json();
+
+    let trashed = 0;
+    const problems = [];
+    (data.outcomes || []).forEach(o => {
+      if (o.ok) trashed += o.trashed;
+      else problems.push(o.account + (o.needsReconnect ? ' (reconnexion nécessaire — nouveau droit à accorder)' : ' (' + (o.error || 'erreur') + ')'));
+    });
+
+    // Retirer de la liste les mails supprimés avec succès
+    const okAccounts = new Set((data.outcomes || []).filter(o => o.ok).map(o => o.account));
+    document.querySelectorAll('.result-check input').forEach(cb => {
+      if (cb.checked && okAccounts.has(cb.dataset.key.slice(0, cb.dataset.key.indexOf('|')))){
+        cb.closest('.result-row').remove();
+        selectedIds.delete(cb.dataset.key);
+      }
+    });
+    updateTrashBar();
+    document.getElementById('selectAll').checked = false;
+
+    if (problems.length === 0){
+      flash.textContent = '✓ ' + trashed + ' mail' + (trashed > 1 ? 's' : '') + ' mis à la corbeille';
+      showToast(trashed + ' mail' + (trashed > 1 ? 's' : '') + ' à la corbeille (récupérables 30 jours)', 'ok');
+    } else {
+      flash.textContent = trashed + ' supprimé(s), échecs : ' + problems.join(', ');
+      showToast('Certains comptes ont échoué : ' + problems.join(', '), 'err');
+    }
+  } catch(e){
+    flash.textContent = 'Erreur : ' + e.message;
+  } finally {
+    btn.disabled = false;
+    setTimeout(() => { flash.textContent = ''; }, 6000);
+  }
+});
 
 loadBackendUrl();
 handleRedirectParams();
