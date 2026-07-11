@@ -73,13 +73,29 @@
   .result-account { display:inline-block; font-family: var(--mono); font-size: 10px; color: var(--accent); background: rgba(212,165,55,0.1); padding: 2px 6px; border-radius: 5px; margin-top: 6px; }
   .loading { text-align: center; color: var(--muted); font-size: 13px; padding: 20px 0; }
   .error-msg { color: var(--danger); font-size: 12.5px; margin-top: 8px; }
+
+  /* Vue detaillee d'un mail */
+  .mail-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.75); display: none; align-items: flex-start; justify-content: center; padding: 20px 12px; z-index: 100; overflow-y: auto; }
+  .mail-overlay.open { display: flex; }
+  .mail-card { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; max-width: 680px; width: 100%; padding: 18px; margin: auto 0; }
+  .mail-card-top { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; margin-bottom: 12px; }
+  .mail-subject { font-size: 16px; font-weight: 600; line-height: 1.35; }
+  .mail-close { background: var(--panel-2); border: 1px solid var(--line); color: var(--white); border-radius: 8px; padding: 6px 11px; font-size: 13px; cursor: pointer; flex: none; }
+  .mail-meta { font-size: 12.5px; color: var(--muted); line-height: 1.7; border-bottom: 1px solid var(--line); padding-bottom: 12px; margin-bottom: 12px; }
+  .mail-meta b { color: var(--white); font-weight: 500; }
+  .mail-body { font-size: 13.5px; line-height: 1.6; white-space: pre-wrap; word-break: break-word; user-select: text; -webkit-user-select: text; max-height: 55vh; overflow-y: auto; }
+  .mail-actions { display: flex; gap: 8px; margin-top: 14px; flex-wrap: wrap; align-items: center; }
+  .mail-actions .btn { width: auto; padding: 9px 14px; font-size: 13px; }
+  .att-btn { background: var(--panel-2); border: 1px solid var(--line); color: var(--white); border-radius: 8px; padding: 6px 11px; font-size: 12.5px; cursor: pointer; margin: 3px 4px 3px 0; text-decoration: none; display: inline-block; }
+  .att-btn:hover { border-color: var(--accent); }
+  .copied-flash { color: var(--accent-2); font-size: 12px; }
 </style>
 </head>
 <body>
 <div class="wrap">
 
   <header>
-    <div class="eyebrow">Recherche unifiée — historique complet</div>
+    <div class="eyebrow">Recherche unifiée — historique complet <span style="float:right; opacity:0.7;">v2</span></div>
     <h1>Console de recherche mail</h1>
     <div class="sub">Interroge en direct les serveurs Gmail de tes comptes connectés, années d'historique comprises, et fusionne les résultats en une seule liste triée. Les comptes restent connectés côté serveur (pas de reconnexion horaire) — une reconnexion simple est seulement nécessaire tous les 7 jours par compte.</div>
   </header>
@@ -142,6 +158,22 @@
     <div class="results" id="resultsList"></div>
   </div>
 
+</div>
+
+<div class="mail-overlay" id="mailOverlay">
+  <div class="mail-card">
+    <div class="mail-card-top">
+      <div class="mail-subject" id="mailSubject">…</div>
+      <button class="mail-close" id="mailClose">Fermer ✕</button>
+    </div>
+    <div class="mail-meta" id="mailMeta"></div>
+    <div class="mail-body" id="mailBody">Chargement…</div>
+    <div class="mail-actions">
+      <button class="btn" id="copyBodyBtn">Copier le texte</button>
+      <button class="btn secondary" id="copyAllBtn">Copier tout (en-têtes + texte)</button>
+      <span class="copied-flash" id="copiedFlash"></span>
+    </div>
+  </div>
 </div>
 
 <script>
@@ -340,9 +372,7 @@ searchBtn.addEventListener('click', async () => {
     merged.forEach(m => {
       const a = document.createElement('a');
       a.className = 'result';
-      a.href = m.link || '#';
-      a.target = '_blank';
-      a.rel = 'noopener';
+      a.href = '#';
       const dateShort = m.date ? new Date(m.date).toLocaleDateString('fr-CH', {day:'2-digit', month:'2-digit', year:'numeric'}) : '';
       a.innerHTML = `
         <div class="result-top">
@@ -353,6 +383,7 @@ searchBtn.addEventListener('click', async () => {
         <div class="result-snippet">${m.snippet || ''}</div>
         <div class="result-account">${m.account}</div>
       `;
+      a.addEventListener('click', (e) => { e.preventDefault(); openMail(m); });
       resultsList.appendChild(a);
     });
   } catch(e){
@@ -360,6 +391,88 @@ searchBtn.addEventListener('click', async () => {
     errorMsg.textContent = "Erreur : " + e.message;
   }
 });
+
+// ===== Vue detaillee d'un mail (via le backend) =====
+const mailOverlay = document.getElementById('mailOverlay');
+const mailSubject = document.getElementById('mailSubject');
+const mailMeta = document.getElementById('mailMeta');
+const mailBody = document.getElementById('mailBody');
+const copiedFlash = document.getElementById('copiedFlash');
+let currentMailText = '';
+let currentMailHeadersText = '';
+
+document.getElementById('mailClose').addEventListener('click', () => mailOverlay.classList.remove('open'));
+mailOverlay.addEventListener('click', (e) => { if (e.target === mailOverlay) mailOverlay.classList.remove('open'); });
+
+async function openMail(m){
+  const url = getBackendUrl();
+  if (!url) return;
+
+  mailSubject.textContent = m.subject || '(sans objet)';
+  mailMeta.innerHTML = '';
+  mailBody.textContent = 'Chargement…';
+  copiedFlash.textContent = '';
+  mailOverlay.classList.add('open');
+
+  try {
+    const res = await fetch(url + '/message/' + encodeURIComponent(m.account) + '/' + encodeURIComponent(m.id));
+    if (!res.ok){
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error || ('HTTP ' + res.status));
+    }
+    const data = await res.json();
+
+    const esc = s => (s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;');
+    mailMeta.innerHTML =
+      `<div><b>De :</b> ${esc(data.from)}</div>` +
+      `<div><b>À :</b> ${esc(data.to)}</div>` +
+      (data.cc ? `<div><b>Cc :</b> ${esc(data.cc)}</div>` : '') +
+      `<div><b>Date :</b> ${esc(data.date)}</div>` +
+      `<div><b>Compte :</b> ${esc(data.account)}</div>`;
+
+    mailBody.textContent = data.body || '(corps du message introuvable)';
+    currentMailText = data.body || '';
+
+    if (data.attachments && data.attachments.length){
+      const attDiv = document.createElement('div');
+      attDiv.innerHTML = '<b>Pièces jointes :</b><br>';
+      data.attachments.forEach(att => {
+        const link = document.createElement('a');
+        link.className = 'att-btn';
+        const sizeKo = att.size ? ' (' + Math.round(att.size/1024) + ' Ko)' : '';
+        link.textContent = '⬇ ' + att.filename + sizeKo;
+        link.href = url + '/attachment/' + encodeURIComponent(data.account) + '/' + encodeURIComponent(data.id) + '/' + encodeURIComponent(att.attachmentId) + '?filename=' + encodeURIComponent(att.filename) + '&mime=' + encodeURIComponent(att.mimeType);
+        attDiv.appendChild(link);
+      });
+      mailMeta.appendChild(attDiv);
+    }
+
+    currentMailHeadersText =
+      "De : " + (data.from || '') + "\n" +
+      "À : " + (data.to || '') + "\n" +
+      (data.cc ? "Cc : " + data.cc + "\n" : "") +
+      "Date : " + (data.date || '') + "\n" +
+      "Objet : " + (data.subject || '') + "\n" +
+      ((data.attachments && data.attachments.length) ? "Pièces jointes : " + data.attachments.map(a => a.filename).join(', ') + "\n" : "");
+  } catch(e){
+    mailBody.textContent = "Erreur : " + e.message;
+    currentMailText = '';
+    currentMailHeadersText = '';
+  }
+}
+
+async function copyText(text){
+  try {
+    await navigator.clipboard.writeText(text);
+    copiedFlash.textContent = '✓ copié';
+    setTimeout(() => copiedFlash.textContent = '', 2000);
+  } catch(e){
+    copiedFlash.textContent = 'Copie refusée — sélectionne le texte manuellement.';
+  }
+}
+
+document.getElementById('copyBodyBtn').addEventListener('click', () => copyText(currentMailText));
+document.getElementById('copyAllBtn').addEventListener('click', () => copyText(currentMailHeadersText + "\n" + currentMailText));
 
 loadBackendUrl();
 handleRedirectParams();
