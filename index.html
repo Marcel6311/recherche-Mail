@@ -108,7 +108,7 @@
 <div class="wrap">
 
   <header>
-    <div class="eyebrow">Recherche unifiée — historique complet <span style="float:right; opacity:0.7;">v4</span></div>
+    <div class="eyebrow">Recherche unifiée — historique complet <span style="float:right; opacity:0.7;">v5</span></div>
     <h1>Console de recherche mail</h1>
     <div class="sub">Interroge en direct les serveurs Gmail de tes comptes connectés, années d'historique comprises, et fusionne les résultats en une seule liste triée. Les comptes restent connectés côté serveur (pas de reconnexion horaire) — une reconnexion simple est seulement nécessaire tous les 7 jours par compte.</div>
   </header>
@@ -417,12 +417,15 @@ searchBtn.addEventListener('click', async () => {
       a.className = 'result';
       a.href = '#';
       const dateShort = m.date ? new Date(m.date).toLocaleDateString('fr-CH', {day:'2-digit', month:'2-digit', year:'numeric'}) : '';
+      let badge = '';
+      if (m.labels && m.labels.includes('TRASH')) badge = '<span style="font-family:var(--mono); font-size:10px; color:var(--danger); border:1px solid var(--danger); border-radius:5px; padding:1px 6px; margin-left:6px;">🗑 corbeille</span>';
+      else if (m.labels && m.labels.includes('SPAM')) badge = '<span style="font-family:var(--mono); font-size:10px; color:var(--accent); border:1px solid var(--accent); border-radius:5px; padding:1px 6px; margin-left:6px;">⚠ spam</span>';
       a.innerHTML = `
         <div class="result-top">
           <div class="result-from">${(m.from || '').replace(/</,'&lt;').split('<')[0].trim()}</div>
           <div class="result-date">${dateShort}</div>
         </div>
-        <div class="result-subject">${m.subject || '(sans objet)'}</div>
+        <div class="result-subject">${m.subject || '(sans objet)'}${badge}</div>
         <div class="result-snippet">${m.snippet || ''}</div>
         <div class="result-account">${m.account}</div>
       `;
