@@ -376,6 +376,25 @@ function htmlToText(html) {
     .trim();
 }
 
+// Extraction des liens du HTML : texte affiche vs destination reelle
+// (pour detecter l'hameconnage ou le texte pretend etre un site officiel)
+function extractLinks(html) {
+  const links = [];
+  const seen = new Set();
+  const re = /<a\b[^>]*href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi;
+  let match;
+  while ((match = re.exec(html)) !== null && links.length < 60) {
+    const href = match[1].trim();
+    if (!/^https?:\/\//i.test(href)) continue; // ignore mailto:, tel:, ancres
+    const text = match[2].replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim().slice(0, 120);
+    const key = href + '|' + text;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    links.push({ href, text });
+  }
+  return links;
+}
+
 app.get('/message/:email/:id', async (req, res) => {
   try {
     const email = decodeURIComponent(req.params.email);
@@ -396,6 +415,8 @@ app.get('/message/:email/:id', async (req, res) => {
     else if (html) bodyText = htmlToText(html);
     else bodyText = msg.data.snippet || '';
 
+    const links = html ? extractLinks(html) : [];
+
     res.json({
       account: email,
       id: msg.data.id,
@@ -405,6 +426,7 @@ app.get('/message/:email/:id', async (req, res) => {
       date: extractHeader(headers, 'Date'),
       subject: extractHeader(headers, 'Subject'),
       body: bodyText,
+      links,
       attachments,
     });
   } catch (err) {
