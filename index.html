@@ -108,7 +108,7 @@
 <div class="wrap">
 
   <header>
-    <div class="eyebrow">Recherche unifiée — historique complet <span style="float:right; opacity:0.7;">v8</span></div>
+    <div class="eyebrow">Recherche unifiée — historique complet <span style="float:right; opacity:0.7;">v9</span></div>
     <h1>Console de recherche mail</h1>
     <div class="sub">Interroge en direct les serveurs Gmail de tes comptes connectés, années d'historique comprises, et fusionne les résultats en une seule liste triée. Les comptes restent connectés côté serveur (pas de reconnexion horaire) — une reconnexion simple est seulement nécessaire tous les 7 jours par compte.</div>
   </header>
@@ -196,8 +196,10 @@
       <button class="btn" id="copyBodyBtn">Copier le texte</button>
       <button class="btn secondary" id="copyAllBtn">Copier tout (en-têtes + texte)</button>
       <button class="btn secondary" id="translateBtn">🌐 Traduire en français</button>
+      <button class="btn secondary" id="linksBtn" style="display:none;">🔍 Analyser les liens (<span id="linksCount">0</span>)</button>
       <span class="copied-flash" id="copiedFlash"></span>
     </div>
+    <div id="linksPanel" style="display:none; margin-top:12px; border-top:1px solid var(--line); padding-top:12px;"></div>
   </div>
 </div>
 
@@ -455,6 +457,78 @@ const mailBody = document.getElementById('mailBody');
 const copiedFlash = document.getElementById('copiedFlash');
 let currentMailText = '';
 let currentMailHeadersText = '';
+let currentMailLinks = [];
+const VERIFICATEUR_URL = 'https://marcel6311.github.io/V-rificateur-de-sites/';
+
+function domainOf(url){
+  try { return new URL(url).hostname.replace(/^www\./,''); } catch(e){ return ''; }
+}
+
+function analyseLink(link){
+  const warnings = [];
+  const dest = domainOf(link.href);
+
+  // 1. Le texte affiché ressemble à une URL/domaine différent de la vraie destination
+  const textAsUrl = (link.text.match(/(?:https?:\/\/)?((?:[a-z0-9-]+\.)+[a-z]{2,})/i) || [])[1];
+  if (textAsUrl && dest && !dest.endsWith(textAsUrl.replace(/^www\./,'')) && !textAsUrl.replace(/^www\./,'').endsWith(dest)){
+    warnings.push('le texte affiche « ' + textAsUrl + ' » mais mène vers « ' + dest + ' »');
+  }
+  // 2. Raccourcisseurs d'URL (masquent la vraie destination)
+  if (/^(bit\.ly|tinyurl\.com|t\.co|goo\.gl|ow\.ly|is\.gd|cutt\.ly|rb\.gy|shorturl\.at)$/i.test(dest)){
+    warnings.push('raccourcisseur d\'URL (destination masquée)');
+  }
+  // 3. Adresse IP au lieu d'un nom de domaine
+  if (/^\d{1,3}(\.\d{1,3}){3}$/.test(dest)){
+    warnings.push('adresse IP brute au lieu d\'un nom de site');
+  }
+  // 4. Caractères trompeurs / punycode
+  if (dest.includes('xn--')){
+    warnings.push('caractères déguisés dans le domaine (punycode)');
+  }
+  // 5. Marque connue en sous-domaine d'un autre site (ex: postfinance.xyz-secure.com)
+  const brands = ['paypal','postfinance','ubs','credit-suisse','raiffeisen','google','apple','microsoft','amazon','netflix','swisscom','cff','sbb','migros','coop','twint','dhl','laposte','post'];
+  const parts = dest.split('.');
+  const registrable = parts.slice(-2).join('.');
+  brands.forEach(b => {
+    if (dest.includes(b) && !registrable.startsWith(b + '.') && !registrable.includes(b)){
+      warnings.push('« ' + b + ' » utilisé dans un domaine qui n\'est pas le sien');
+    }
+  });
+  return warnings;
+}
+
+document.getElementById('linksBtn').addEventListener('click', () => {
+  const panel = document.getElementById('linksPanel');
+  if (panel.style.display === 'block'){ panel.style.display = 'none'; return; }
+
+  panel.innerHTML = '';
+  const esc = s => (s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;');
+
+  currentMailLinks.forEach(link => {
+    const warnings = analyseLink(link);
+    const div = document.createElement('div');
+    div.style.cssText = 'margin-bottom:10px; padding:9px 11px; border-radius:8px; border:1px solid ' + (warnings.length ? 'var(--danger)' : 'var(--line)') + '; background: var(--panel-2);';
+    div.innerHTML =
+      (link.text ? '<div style="font-size:12.5px; margin-bottom:3px;">Texte affiché : <b>' + esc(link.text) + '</b></div>' : '') +
+      '<div style="font-family:var(--mono); font-size:11.5px; color:var(--muted); word-break:break-all; user-select:text; -webkit-user-select:text;">→ ' + esc(link.href) + '</div>' +
+      (warnings.length ? '<div style="font-size:12px; color:var(--danger); margin-top:5px;">⚠ ' + warnings.map(esc).join(' · ') + '</div>' : '');
+    const verifBtn = document.createElement('a');
+    verifBtn.className = 'att-btn';
+    verifBtn.style.marginTop = '7px';
+    verifBtn.textContent = '🛡 Vérifier ce site';
+    verifBtn.href = VERIFICATEUR_URL + '?url=' + encodeURIComponent(link.href);
+    verifBtn.target = '_blank';
+    verifBtn.rel = 'noopener';
+    div.appendChild(verifBtn);
+    panel.appendChild(div);
+  });
+
+  const note = document.createElement('div');
+  note.className = 'note';
+  note.textContent = 'Les liens ne sont volontairement pas cliquables — le bouton 🛡 envoie l\'adresse vers ton Vérificateur de sites sans jamais ouvrir le site lui-même.';
+  panel.appendChild(note);
+  panel.style.display = 'block';
+});
 
 document.getElementById('mailClose').addEventListener('click', () => mailOverlay.classList.remove('open'));
 mailOverlay.addEventListener('click', (e) => { if (e.target === mailOverlay) mailOverlay.classList.remove('open'); });
@@ -487,6 +561,19 @@ async function openMail(m){
 
     mailBody.textContent = data.body || '(corps du message introuvable)';
     currentMailText = data.body || '';
+
+    // Liens extraits du mail
+    currentMailLinks = data.links || [];
+    const linksBtn = document.getElementById('linksBtn');
+    const linksPanel = document.getElementById('linksPanel');
+    linksPanel.style.display = 'none';
+    linksPanel.innerHTML = '';
+    if (currentMailLinks.length){
+      document.getElementById('linksCount').textContent = currentMailLinks.length;
+      linksBtn.style.display = 'inline-flex';
+    } else {
+      linksBtn.style.display = 'none';
+    }
 
     if (data.attachments && data.attachments.length){
       const attDiv = document.createElement('div');
