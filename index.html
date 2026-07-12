@@ -108,7 +108,7 @@
 <div class="wrap">
 
   <header>
-    <div class="eyebrow">Recherche unifiée — historique complet <span style="float:right; opacity:0.7;">v9</span></div>
+    <div class="eyebrow">Recherche unifiée — historique complet <span style="float:right; opacity:0.7;">v10</span></div>
     <h1>Console de recherche mail</h1>
     <div class="sub">Interroge en direct les serveurs Gmail de tes comptes connectés, années d'historique comprises, et fusionne les résultats en une seule liste triée. Les comptes restent connectés côté serveur (pas de reconnexion horaire) — une reconnexion simple est seulement nécessaire tous les 7 jours par compte.</div>
   </header>
@@ -520,6 +520,18 @@ document.getElementById('linksBtn').addEventListener('click', () => {
     verifBtn.target = '_blank';
     verifBtn.rel = 'noopener';
     div.appendChild(verifBtn);
+
+    const dest = domainOf(link.href);
+    if (dest){
+      const domBtn = document.createElement('a');
+      domBtn.className = 'att-btn';
+      domBtn.style.marginTop = '7px';
+      domBtn.textContent = '🌐 Vérifier le domaine seul (' + dest + ')';
+      domBtn.href = VERIFICATEUR_URL + '?url=' + encodeURIComponent(dest);
+      domBtn.target = '_blank';
+      domBtn.rel = 'noopener';
+      div.appendChild(domBtn);
+    }
     panel.appendChild(div);
   });
 
