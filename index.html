@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Recherche unifiée — Gmail multi-comptes</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <style>
   :root{
     --bg: #0d0f0e;
@@ -90,6 +91,21 @@
   .att-btn:hover { border-color: var(--accent); }
   .copied-flash { color: var(--accent-2); font-size: 12px; }
 
+  /* Impression propre : seul le contenu du mail apparait, sans interface */
+  @media print {
+    body * { visibility: hidden; }
+    .mail-card, .mail-card * { visibility: visible; }
+    .mail-card {
+      position: absolute; top: 0; left: 0; width: 100%; max-width: 100%;
+      background: #fff !important; color: #000 !important; border: none; box-shadow: none;
+    }
+    .mail-subject, .mail-meta, .mail-meta b { color: #000 !important; }
+    .mail-meta { border-bottom: 1px solid #999; }
+    .mail-body { color: #000 !important; max-height: none !important; overflow: visible !important; }
+    .mail-close, .mail-actions, #linksPanel, #linksBtn { display: none !important; }
+    .mail-overlay { background: #fff !important; position: static !important; padding: 0 !important; }
+  }
+
   /* Selection et corbeille */
   .result-row { display: flex; align-items: stretch; gap: 8px; }
   .result-row .result { flex: 1; min-width: 0; }
@@ -108,7 +124,7 @@
 <div class="wrap">
 
   <header>
-    <div class="eyebrow">Recherche unifiée — historique complet <span style="float:right; opacity:0.7;">v10</span></div>
+    <div class="eyebrow">Recherche unifiée — historique complet <span style="float:right; opacity:0.7;">v11</span></div>
     <h1>Console de recherche mail</h1>
     <div class="sub">Interroge en direct les serveurs Gmail de tes comptes connectés, années d'historique comprises, et fusionne les résultats en une seule liste triée. Les comptes restent connectés côté serveur (pas de reconnexion horaire) — une reconnexion simple est seulement nécessaire tous les 7 jours par compte.</div>
   </header>
@@ -196,6 +212,8 @@
       <button class="btn" id="copyBodyBtn">Copier le texte</button>
       <button class="btn secondary" id="copyAllBtn">Copier tout (en-têtes + texte)</button>
       <button class="btn secondary" id="translateBtn">🌐 Traduire en français</button>
+      <button class="btn secondary" id="printBtn">🖨️ Imprimer</button>
+      <button class="btn secondary" id="pdfBtn">📄 Enregistrer en PDF</button>
       <button class="btn secondary" id="linksBtn" style="display:none;">🔍 Analyser les liens (<span id="linksCount">0</span>)</button>
       <span class="copied-flash" id="copiedFlash"></span>
     </div>
@@ -496,6 +514,51 @@ function analyseLink(link){
   });
   return warnings;
 }
+
+document.getElementById('printBtn').addEventListener('click', () => {
+  window.print();
+});
+
+document.getElementById('pdfBtn').addEventListener('click', () => {
+  try {
+    const { jsPDF } = window.jspdf;
+    const doc = new jsPDF({ unit: 'mm', format: 'a4' });
+    const marginLeft = 15;
+    const marginTop = 18;
+    const maxWidth = 180;
+    let y = marginTop;
+
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(13);
+    const subjectLines = doc.splitTextToSize(mailSubject.textContent || '(sans objet)', maxWidth);
+    doc.text(subjectLines, marginLeft, y);
+    y += subjectLines.length * 6 + 4;
+
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(9.5);
+    const headerLines = doc.splitTextToSize(currentMailHeadersText.trim(), maxWidth);
+    doc.text(headerLines, marginLeft, y);
+    y += headerLines.length * 4.6 + 4;
+
+    doc.setDrawColor(180);
+    doc.line(marginLeft, y, marginLeft + maxWidth, y);
+    y += 6;
+
+    doc.setFontSize(10.5);
+    const bodyLines = doc.splitTextToSize(currentMailText || '(corps vide)', maxWidth);
+    const pageHeight = doc.internal.pageSize.getHeight();
+    bodyLines.forEach(line => {
+      if (y > pageHeight - 18){ doc.addPage(); y = marginTop; }
+      doc.text(line, marginLeft, y);
+      y += 5;
+    });
+
+    const safeName = (mailSubject.textContent || 'mail').replace(/[\\/:*?"<>|]/g, '').slice(0, 60).trim() || 'mail';
+    doc.save(safeName + '.pdf');
+  } catch(e){
+    copiedFlash.textContent = 'Erreur PDF : ' + e.message;
+  }
+});
 
 document.getElementById('linksBtn').addEventListener('click', () => {
   const panel = document.getElementById('linksPanel');
