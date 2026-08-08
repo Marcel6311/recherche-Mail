@@ -631,6 +631,23 @@ app.get('/api/cellar', async (req, res) => {
   }
 });
 
+// Debug login : affiche le formulaire de login CellarTracker
+app.get('/api/cellar/loginform', async (req, res) => {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  try {
+    const r = await fetch('https://www.cellartracker.com/login.asp', {
+      headers: { 'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15', 'Accept': 'text/html,*/*' }
+    });
+    const html = await r.text();
+    // Extrait uniquement le bloc <form> pour voir les champs
+    const match = html.match(/<form[\s\S]*?<\/form>/i);
+    res.setHeader('Content-Type', 'text/plain');
+    res.send(match ? match[0] : 'Aucun formulaire trouve. Debut HTML: ' + html.substring(0, 500));
+  } catch(e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // Debug : teste la session CellarTracker et retourne les colonnes brutes
 app.get('/api/cellar/debug', async (req, res) => {
   res.setHeader('Access-Control-Allow-Origin', '*');
