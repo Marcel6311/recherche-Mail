@@ -533,6 +533,27 @@ app.post('/untrash', async (req, res) => {
   }
 });
 
+// ---------- Proxy Grapeminds (contourne le CORS des apps locales) ----------
+
+app.get('/api/wine', async (req, res) => {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  const q = req.query.q;
+  if (!q) return res.status(400).json({ error: 'Parametre q requis' });
+  const key = process.env.GRAPEMINDS_API_KEY;
+  if (!key) return res.status(500).json({ error: 'GRAPEMINDS_API_KEY non definie sur le serveur' });
+  try {
+    const r = await fetch(
+      'https://api.grapeminds.eu/public/v1/wines?q=' + encodeURIComponent(q) + '&limit=15',
+      { headers: { 'X-API-Key': key } }
+    );
+    if (!r.ok) return res.status(r.status).json({ error: 'Grapeminds HTTP ' + r.status });
+    const data = await r.json();
+    res.json(data);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 app.listen(PORT, () => {
   console.log(`Recherche-Mail backend demarre sur le port ${PORT} (stockage: ${USE_REDIS ? 'Upstash Redis' : 'fichier local'})`);
 });
