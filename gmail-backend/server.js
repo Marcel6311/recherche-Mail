@@ -564,16 +564,34 @@ app.get('/api/cellar', async (req, res) => {
   const pass = process.env.CELLARTRACKER_PASS;
   if (!user || !pass) return res.status(500).json({ error: 'CELLARTRACKER_USER/PASS non definis sur le serveur' });
   try {
+    // CellarTracker attend les credentials en Basic Auth + parametre Wine pour la recherche globale
+    const credentials = Buffer.from(user + ':' + pass).toString('base64');
     const url = 'https://www.cellartracker.com/list.asp'
       + '?User=' + encodeURIComponent(user)
       + '&Password=' + encodeURIComponent(pass)
-      + '&Type=List&Table=List&format=json'
+      + '&Type=List&Table=List&format=tab'
       + '&Wine=' + encodeURIComponent(q);
-    const r = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0' } });
+    const r = await fetch(url, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        'Accept-Language': 'fr-FR,fr;q=0.9',
+        'Authorization': 'Basic ' + credentials,
+        'Referer': 'https://www.cellartracker.com/'
+      }
+    });
     if (!r.ok) return res.status(r.status).json({ error: 'CellarTracker HTTP ' + r.status });
-    const data = await r.json();
-    // Normalise : CellarTracker renvoie soit un tableau soit { Table: [...] }
-    const list = Array.isArray(data) ? data : (data.Table || data.list || []);
+    const text = await r.text();
+    // Format tab-separated : premiere ligne = headers, suivantes = donnees
+    const lines = text.trim().split('\n').filter(Boolean);
+    if (lines.length < 2) return res.json([]);
+    const headers = lines[0].split('\t');
+    const list = lines.slice(1).map(function(line) {
+      const cols = line.split('\t');
+      const obj = {};
+      headers.forEach(function(h, i) { obj[h.trim()] = (cols[i] || '').trim(); });
+      return obj;
+    });
     res.json(list);
   } catch (e) {
     res.status(500).json({ error: e.message });
