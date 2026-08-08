@@ -554,6 +554,32 @@ app.get('/api/wine', async (req, res) => {
   }
 });
 
+// ---------- Proxy CellarTracker ----------
+
+app.get('/api/cellar', async (req, res) => {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  const q = req.query.q;
+  if (!q) return res.status(400).json({ error: 'Parametre q requis' });
+  const user = process.env.CELLARTRACKER_USER;
+  const pass = process.env.CELLARTRACKER_PASS;
+  if (!user || !pass) return res.status(500).json({ error: 'CELLARTRACKER_USER/PASS non definis sur le serveur' });
+  try {
+    const url = 'https://www.cellartracker.com/list.asp'
+      + '?User=' + encodeURIComponent(user)
+      + '&Password=' + encodeURIComponent(pass)
+      + '&Type=List&Table=List&format=json'
+      + '&Wine=' + encodeURIComponent(q);
+    const r = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0' } });
+    if (!r.ok) return res.status(r.status).json({ error: 'CellarTracker HTTP ' + r.status });
+    const data = await r.json();
+    // Normalise : CellarTracker renvoie soit un tableau soit { Table: [...] }
+    const list = Array.isArray(data) ? data : (data.Table || data.list || []);
+    res.json(list);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 app.listen(PORT, () => {
   console.log(`Recherche-Mail backend demarre sur le port ${PORT} (stockage: ${USE_REDIS ? 'Upstash Redis' : 'fichier local'})`);
 });
