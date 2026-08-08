@@ -583,17 +583,45 @@ app.get('/api/cellar', async (req, res) => {
     if (!r.ok) return res.status(r.status).json({ error: 'CellarTracker HTTP ' + r.status });
     const text = await r.text();
     // Format tab-separated : premiere ligne = headers, suivantes = donnees
-    const lines = text.trim().split('\n').filter(Boolean);
+    // CellarTracker utilise \r\n — on normalise
+    const lines = text.replace(/\r/g, '').trim().split('\n').filter(Boolean);
     if (lines.length < 2) return res.json([]);
-    const headers = lines[0].split('\t');
+    // Supprimer le BOM eventuel sur la premiere ligne
+    const headers = lines[0].replace(/^﻿/, '').split('\t').map(function(h){ return h.trim(); });
     const list = lines.slice(1).map(function(line) {
       const cols = line.split('\t');
       const obj = {};
-      headers.forEach(function(h, i) { obj[h.trim()] = (cols[i] || '').trim(); });
+      headers.forEach(function(h, i) { obj[h] = (cols[i] || '').trim(); });
       return obj;
     });
     res.json(list);
   } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Debug : retourne les noms de colonnes bruts de CellarTracker
+app.get('/api/cellar/debug', async (req, res) => {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  const user = process.env.CELLARTRACKER_USER;
+  const pass = process.env.CELLARTRACKER_PASS;
+  if (!user || !pass) return res.status(500).json({ error: 'credentials manquants' });
+  try {
+    const url = 'https://www.cellartracker.com/list.asp'
+      + '?User=' + encodeURIComponent(user)
+      + '&Password=' + encodeURIComponent(pass)
+      + '&Type=List&Table=List&format=tab&Wine=Margaux';
+    const r = await fetch(url, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15',
+        'Accept': 'text/html,*/*',
+        'Referer': 'https://www.cellartracker.com/'
+      }
+    });
+    const text = await r.text();
+    const lines = text.replace(/\r/g, '').trim().split('\n');
+    res.json({ status: r.status, headers: lines[0], firstRow: lines[1] || null, totalLines: lines.length });
+  } catch(e) {
     res.status(500).json({ error: e.message });
   }
 });
