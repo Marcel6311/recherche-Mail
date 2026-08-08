@@ -554,7 +554,48 @@ app.get('/api/wine', async (req, res) => {
   }
 });
 
-// ---------- Proxy CellarTracker ----------
+// ---------- Proxy CellarTracker (session cookie) ----------
+
+let ctSession = null; // { cookie, expires }
+
+async function cellarTrackerLogin(user, pass) {
+  const UA = 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1';
+  const loginResp = await fetch('https://www.cellartracker.com/login.asp', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/x-www-form-urlencoded',
+      'User-Agent': UA,
+      'Referer': 'https://www.cellartracker.com/',
+      'Accept': 'text/html,application/xhtml+xml,*/*;q=0.8',
+      'Accept-Language': 'fr-FR,fr;q=0.9',
+    },
+    body: 'szUser=' + encodeURIComponent(user) + '&szPassword=' + encodeURIComponent(pass) + '&szRedirect=',
+    redirect: 'manual'
+  });
+  const raw = loginResp.headers.get('set-cookie') || '';
+  if (!raw) throw new Error('Login CellarTracker echoue — verifiez identifiants');
+  // On garde tous les cookies sur une seule ligne
+  const cookie = raw.split(/,(?=[^ ])/g).map(function(c){ return c.split(';')[0].trim(); }).join('; ');
+  ctSession = { cookie, expires: Date.now() + 20 * 60 * 1000 }; // 20 min
+  return cookie;
+}
+
+async function getCTCookie(user, pass) {
+  if (ctSession && ctSession.expires > Date.now()) return ctSession.cookie;
+  return cellarTrackerLogin(user, pass);
+}
+
+function parseCTTab(text) {
+  const lines = text.replace(/\r/g, '').trim().split('\n').filter(Boolean);
+  if (lines.length < 2) return [];
+  const headers = lines[0].replace(/^﻿/, '').split('\t').map(function(h){ return h.trim(); });
+  return lines.slice(1).map(function(line) {
+    const cols = line.split('\t');
+    const obj = {};
+    headers.forEach(function(h, i) { obj[h] = (cols[i] || '').trim(); });
+    return obj;
+  });
+}
 
 app.get('/api/cellar', async (req, res) => {
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -562,57 +603,46 @@ app.get('/api/cellar', async (req, res) => {
   if (!q) return res.status(400).json({ error: 'Parametre q requis' });
   const user = process.env.CELLARTRACKER_USER;
   const pass = process.env.CELLARTRACKER_PASS;
-  if (!user || !pass) return res.status(500).json({ error: 'CELLARTRACKER_USER/PASS non definis sur le serveur' });
+  if (!user || !pass) return res.status(500).json({ error: 'CELLARTRACKER_USER/PASS non definis' });
   try {
-    // CellarTracker attend les credentials en Basic Auth + parametre Wine pour la recherche globale
-    const credentials = Buffer.from(user + ':' + pass).toString('base64');
+    const cookie = await getCTCookie(user, pass);
     const url = 'https://www.cellartracker.com/list.asp'
-      + '?User=' + encodeURIComponent(user)
-      + '&Password=' + encodeURIComponent(pass)
-      + '&Type=List&Table=List&format=tab'
+      + '?Type=List&Table=List&format=tab'
       + '&Wine=' + encodeURIComponent(q);
     const r = await fetch(url, {
       headers: {
-        'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1',
-        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-        'Accept-Language': 'fr-FR,fr;q=0.9',
-        'Authorization': 'Basic ' + credentials,
-        'Referer': 'https://www.cellartracker.com/'
+        'Cookie': cookie,
+        'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15',
+        'Referer': 'https://www.cellartracker.com/',
+        'Accept': 'text/html,*/*',
+        'Accept-Language': 'fr-FR,fr;q=0.9'
       }
     });
     if (!r.ok) return res.status(r.status).json({ error: 'CellarTracker HTTP ' + r.status });
     const text = await r.text();
-    // Format tab-separated : premiere ligne = headers, suivantes = donnees
-    // CellarTracker utilise \r\n — on normalise
-    const lines = text.replace(/\r/g, '').trim().split('\n').filter(Boolean);
-    if (lines.length < 2) return res.json([]);
-    // Supprimer le BOM eventuel sur la premiere ligne
-    const headers = lines[0].replace(/^﻿/, '').split('\t').map(function(h){ return h.trim(); });
-    const list = lines.slice(1).map(function(line) {
-      const cols = line.split('\t');
-      const obj = {};
-      headers.forEach(function(h, i) { obj[h] = (cols[i] || '').trim(); });
-      return obj;
-    });
-    res.json(list);
+    if (text.trim().startsWith('<')) {
+      // Recu du HTML = session expiree, on relance le login
+      ctSession = null;
+      return res.status(401).json({ error: 'Session expiree, reessayez' });
+    }
+    res.json(parseCTTab(text));
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
 });
 
-// Debug : retourne les noms de colonnes bruts de CellarTracker
+// Debug : teste la session CellarTracker et retourne les colonnes brutes
 app.get('/api/cellar/debug', async (req, res) => {
   res.setHeader('Access-Control-Allow-Origin', '*');
   const user = process.env.CELLARTRACKER_USER;
   const pass = process.env.CELLARTRACKER_PASS;
   if (!user || !pass) return res.status(500).json({ error: 'credentials manquants' });
   try {
-    const url = 'https://www.cellartracker.com/list.asp'
-      + '?User=' + encodeURIComponent(user)
-      + '&Password=' + encodeURIComponent(pass)
-      + '&Type=List&Table=List&format=tab&Wine=Margaux';
+    const cookie = await getCTCookie(user, pass);
+    const url = 'https://www.cellartracker.com/list.asp?Type=List&Table=List&format=tab&Wine=Margaux';
     const r = await fetch(url, {
       headers: {
+        'Cookie': cookie,
         'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15',
         'Accept': 'text/html,*/*',
         'Referer': 'https://www.cellartracker.com/'
@@ -620,7 +650,8 @@ app.get('/api/cellar/debug', async (req, res) => {
     });
     const text = await r.text();
     const lines = text.replace(/\r/g, '').trim().split('\n');
-    res.json({ status: r.status, headers: lines[0], firstRow: lines[1] || null, totalLines: lines.length });
+    const isHtml = text.trim().startsWith('<');
+    res.json({ status: r.status, isHtml, columns: isHtml ? null : lines[0], firstRow: isHtml ? null : (lines[1] || null), totalLines: lines.length });
   } catch(e) {
     res.status(500).json({ error: e.message });
   }
